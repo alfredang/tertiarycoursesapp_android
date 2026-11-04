@@ -4,6 +4,9 @@
 ![Language](https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white)
 ![UI](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
 ![License](https://img.shields.io/badge/license-Proprietary-lightgrey)
+[![Get it on Google Play](https://img.shields.io/badge/Get%20it%20on-Google%20Play-414141?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.tertiaryinfotech.tertiarycoursesapp)
+
+**[Get it on Google Play →](https://play.google.com/store/apps/details?id=com.tertiaryinfotech.tertiarycoursesapp)**
 
 Native Android app for [Tertiary Courses Singapore](https://www.tertiarycourses.com.sg/) — browse the WSQ course catalog, estimate SSG grants and SkillsFuture Credit, get your net course fee, and register on the website. The Android counterpart of the [iOS app](https://github.com/alfredang/tertiarycoursesapp), with the same features and white/deep-blue house design.
 
@@ -66,7 +69,7 @@ keyPassword=...
 
 ## Release Notes
 
-See [CHANGELOG.md](CHANGELOG.md). Current release: **1.0 (1)** — first closed-testing release on Google Play.
+See [CHANGELOG.md](CHANGELOG.md). Current release: **1.0 (1)** — live in production on [Google Play](https://play.google.com/store/apps/details?id=com.tertiaryinfotech.tertiarycoursesapp) (`com.tertiaryinfotech.tertiarycoursesapp`).
 
 ## Data Sources & Disclaimer
 
