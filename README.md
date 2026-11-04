@@ -13,6 +13,8 @@ course feedback, and get their certificates and billing records. Anyone can brow
 course catalog. It is the Android counterpart of the iOS app of the same name, with the same
 features and the white / deep-blue (`#0B3D8E`) house design.
 
+<p><a href="https://play.google.com/store/apps/details?id=com.tertiaryinfotech.tertiarycoursesapp"><img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="80"></a></p>
+
 ## Features
 
 **Signed out** — bottom navigation: Sign In · Courses · About
