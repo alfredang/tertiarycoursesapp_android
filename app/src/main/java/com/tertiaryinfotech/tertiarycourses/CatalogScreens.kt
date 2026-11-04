@@ -1,7 +1,6 @@
 package com.tertiaryinfotech.tertiarycourses
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,47 +17,42 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Calculate
-import androidx.compose.material.icons.filled.Cancel
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Brush
+import androidx.compose.material.icons.filled.BusinessCenter
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Sell
-import androidx.compose.material.icons.filled.SettingsSuggest
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.UnfoldMore
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,115 +61,118 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
-private const val WHATSAPP_NUMBER = "6588666375"
+private const val ALL = "All"
 
-@OptIn(ExperimentalMaterial3Api::class)
+fun categoryIcon(category: String): ImageVector = when (category) {
+    "Artificial Intelligence" -> Icons.Filled.AutoAwesome
+    "Data & Analytics" -> Icons.Filled.Insights
+    "Programming" -> Icons.Filled.Code
+    "Cloud & DevOps" -> Icons.Filled.Cloud
+    "Cybersecurity" -> Icons.Filled.Security
+    "Digital Marketing" -> Icons.Filled.Campaign
+    "Design & Media" -> Icons.Filled.Brush
+    "Microsoft Office" -> Icons.Filled.GridView
+    "Business & Soft Skills" -> Icons.Filled.BusinessCenter
+    "Engineering & IoT" -> Icons.Filled.Memory
+    "Quality & Compliance" -> Icons.Filled.Verified
+    else -> Icons.AutoMirrored.Filled.LibraryBooks
+}
+
+/** Public short-course catalog of this site, grouped into collapsible categories. */
 @Composable
-fun CatalogScreen(onCourseClick: (Course) -> Unit) {
-    var searchText by rememberSaveable { mutableStateOf("") }
-    var selectedCategory by rememberSaveable { mutableStateOf("All") }
+fun CatalogScreen(vm: AppViewModel, push: (Route) -> Unit, onBack: (() -> Unit)? = null) {
+    var category by rememberSaveable { mutableStateOf(ALL) }
+    var search by rememberSaveable { mutableStateOf("") }
+    var collapsed by rememberSaveable { mutableStateOf(setOf<String>()) }
+    var menuOpen by remember { mutableStateOf(false) }
 
-    val categories = listOf("All") + CourseData.courses.map { it.category }.distinct().sorted()
-    val query = searchText.trim()
-    val filteredCourses = CourseData.courses.filter { course ->
-        val categoryMatches = selectedCategory == "All" || course.category == selectedCategory
-        val queryMatches = query.isEmpty() || course.searchIndex.contains(query, ignoreCase = true)
-        categoryMatches && queryMatches
+    val categories = vm.categories
+    if (category != ALL && category !in categories && categories.isNotEmpty()) category = ALL
+    val query = search.trim()
+    val filtered = vm.courses.filter {
+        (category == ALL || it.category == category) && (query.isEmpty() || it.searchIndex.contains(query, ignoreCase = true))
     }
+    val grouped = filtered.groupBy { it.category }
+    val sections = categories.mapNotNull { name -> grouped[name]?.takeIf { it.isNotEmpty() }?.let { name to it } }
 
-    Scaffold(
-        containerColor = Theme.page,
-        topBar = {
-            TopAppBar(
-                title = { Text("Catalog", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Theme.page)
-            )
-        }
-    ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
-                value = searchText,
-                onValueChange = { searchText = it },
-                placeholder = { Text("Search courses") },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (searchText.isNotEmpty()) {
-                        IconButton(onClick = { searchText = "" }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+    ScreenScaffold(title = if (onBack != null) "Courses" else null, onBack = onBack) { padding ->
+        Refreshable({ vm.refreshCatalog() }, Modifier.padding(padding)) {
+            LazyColumn(
+                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = search, onValueChange = { search = it },
+                        placeholder = { Text("Search courses") },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (search.isNotEmpty()) IconButton(onClick = { search = "" }) { Icon(Icons.Filled.Clear, contentDescription = "Clear search") }
+                        },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFFEDEDF2), unfocusedContainerColor = Color(0xFFEDEDF2),
+                            unfocusedBorderColor = Color.Transparent, focusedBorderColor = Theme.accent,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box {
+                            TextButton(onClick = { menuOpen = true }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                Text(if (category == ALL) "All categories" else category, fontSize = 15.sp)
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(text = { Text("All categories") }, onClick = { category = ALL; menuOpen = false })
+                                categories.forEach { c ->
+                                    DropdownMenuItem(
+                                        text = { Text(c) },
+                                        leadingIcon = { Icon(categoryIcon(c), contentDescription = null, tint = Theme.accent) },
+                                        onClick = { category = c; menuOpen = false },
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Text("${filtered.size} course${if (filtered.size == 1) "" else "s"}", fontSize = 12.sp, color = Theme.secondaryText)
+                    }
+                }
+
+                when {
+                    vm.courses.isEmpty() -> item { LoadingBox("Loading courses…") }
+                    filtered.isEmpty() -> item {
+                        EmptyState(Icons.Filled.SearchOff, "No courses found", "Try a different keyword or category.") {
+                            OutlinedButton(onClick = { search = ""; category = ALL }) { Text("Clear Filters") }
                         }
                     }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Theme.accent,
-                    unfocusedBorderColor = Theme.cardBorder
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-            )
-
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                CategoryPicker(
-                    categories = categories,
-                    selected = selectedCategory,
-                    onSelected = { selectedCategory = it }
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "${filteredCourses.size} course" + if (filteredCourses.size == 1) "" else "s",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Theme.secondaryText
-                )
-            }
-
-            if (filteredCourses.isEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 60.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.Search,
-                        contentDescription = null,
-                        tint = Theme.secondaryText,
-                        modifier = Modifier.size(44.dp)
-                    )
-                    Text("No courses found", style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        "Try a different keyword or category.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Theme.secondaryText
-                    )
-                    OutlinedButton(onClick = {
-                        searchText = ""
-                        selectedCategory = "All"
-                    }) {
-                        Text("Clear Search", color = Theme.accent)
-                    }
-                }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 20.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(filteredCourses, key = { it.id }) { course ->
-                        CourseCard(course = course, onClick = { onCourseClick(course) })
+                    else -> sections.forEach { (name, list) ->
+                        val expanded = query.isNotEmpty() || name !in collapsed
+                        item(key = "h-$name") {
+                            CategoryHeader(name, list.size, expanded) {
+                                collapsed = if (name in collapsed) collapsed - name else collapsed + name
+                            }
+                        }
+                        if (expanded) items(list, key = { "c-${it.id}-${it.sku}" }) { course ->
+                            CourseCard(course) { push(Route.CourseDetail(course)) }
+                        }
                     }
                 }
             }
@@ -184,310 +181,87 @@ fun CatalogScreen(onCourseClick: (Course) -> Unit) {
 }
 
 @Composable
-private fun CategoryPicker(categories: List<String>, selected: String, onSelected: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box {
-        Row(
-            modifier = Modifier
-                .background(Theme.accentSoft, RoundedCornerShape(10.dp))
-                .clickable { expanded = true }
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                selected,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Theme.accent
-            )
-            Spacer(Modifier.width(6.dp))
-            Icon(
-                Icons.Filled.UnfoldMore,
-                contentDescription = "Choose category",
-                tint = Theme.accent,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            categories.forEach { category ->
-                DropdownMenuItem(
-                    text = { Text(category) },
-                    onClick = {
-                        onSelected(category)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun CourseCard(course: Course, onClick: () -> Unit) {
-    Column(
-        modifier = Modifier
+private fun CategoryHeader(name: String, count: Int, expanded: Boolean, toggle: () -> Unit) {
+    Row(
+        Modifier
             .fillMaxWidth()
-            .border(1.dp, Theme.cardBorder, RoundedCornerShape(14.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = toggle)
+            .semantics(mergeDescendants = true) { contentDescription = "$name, $count courses, ${if (expanded) "expanded" else "collapsed"}" }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Icon(
-                imageVector = categoryIcon(course.category),
-                contentDescription = null,
-                tint = Theme.accent,
-                modifier = Modifier.size(30.dp)
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    course.courseCode,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Theme.accent
-                )
-                Text(
-                    course.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    course.summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Theme.secondaryText,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
+        Icon(categoryIcon(name), contentDescription = null, tint = Theme.accent, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(name, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "$count", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent,
+            modifier = Modifier.clip(RoundedCornerShape(50)).background(Theme.accentSoft).padding(horizontal = 7.dp, vertical = 3.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        Icon(if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null, tint = Theme.secondaryText)
+    }
+}
+
+@Composable
+private fun CourseCard(course: Course, onClick: () -> Unit) {
+    InfoCard(modifier = Modifier.clickable(onClick = onClick)) {
+        Row(verticalAlignment = Alignment.Top) {
+            CourseThumb(course.imageUrl)
+            Spacer(Modifier.width(12.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(course.sku, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                Text(course.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp)
             }
         }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                Icons.Filled.Schedule,
-                contentDescription = null,
-                tint = Theme.secondaryText,
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(course.duration, style = MaterialTheme.typography.bodySmall, color = Theme.secondaryText)
-            Spacer(Modifier.weight(1f))
-            Icon(
-                Icons.Filled.Sell,
-                contentDescription = null,
-                tint = Theme.secondaryText,
-                modifier = Modifier.size(14.dp)
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "${currency(course.feeWithGST)} w/GST",
-                style = MaterialTheme.typography.bodySmall,
-                color = Theme.secondaryText
-            )
+        if (course.summary.isNotEmpty()) {
+            Spacer(Modifier.height(10.dp))
+            Text(course.summary, fontSize = 14.sp, color = Theme.secondaryText, maxLines = 3, overflow = TextOverflow.Ellipsis, lineHeight = 19.sp)
         }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            course.fundingBadges.forEach { badge -> SchemeBadge(badge) }
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (course.duration.isNotEmpty()) IconLine(Icons.Filled.Schedule, course.duration, color = Theme.secondaryText, fontSize = 12, iconSize = 15.dp)
+            Spacer(Modifier.weight(1f).width(10.dp))
+            if (course.price > 0) IconLine(Icons.Filled.Sell, Fmt.money(course.price, course.currency), color = Theme.secondaryText, fontSize = 12, iconSize = 15.dp)
         }
     }
 }
 
-/** Small funding-scheme chip (WSQ / SFC / SFEC / PSEA / UTAP) sized to fit five in a row. */
-@Composable
-fun SchemeBadge(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        fontWeight = FontWeight.Bold,
-        color = Theme.accent,
-        modifier = Modifier
-            .background(Theme.accentSoft, CircleShape)
-            .padding(horizontal = 7.dp, vertical = 4.dp)
-    )
-}
-
-private fun categoryIcon(category: String): ImageVector = when (category) {
-    "Cybersecurity" -> Icons.Filled.Security
-    "Automation" -> Icons.Filled.SettingsSuggest
-    "Microsoft Power Platform" -> Icons.Filled.GridView
-    "Programming", "AI and Programming" -> Icons.Filled.Code
-    "Data Analytics" -> Icons.AutoMirrored.Filled.ShowChart
-    "Data Visualisation", "Business Intelligence" -> Icons.Filled.BarChart
-    "Databases" -> Icons.Filled.Storage
-    else -> Icons.AutoMirrored.Filled.MenuBook
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CourseDetailScreen(course: Course, onBack: () -> Unit) {
-    val uriHandler = LocalUriHandler.current
-    var showGrantSheet by rememberSaveable { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    Scaffold(
-        containerColor = Theme.page,
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        course.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Theme.page)
-            )
-        }
-    ) { padding ->
+    val context = LocalContext.current
+    ScreenScaffold(title = course.title, onBack = onBack) { padding ->
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
+            if (course.imageUrl.isNotEmpty()) {
+                RemoteImage(
+                    course.imageUrl, maxPx = 1200, contentScale = ContentScale.FillWidth,
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)),
+                )
+            }
             InfoCard {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        course.category,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Theme.accent
-                    )
-                    Text(course.summary, style = MaterialTheme.typography.bodyLarge)
-                    HorizontalDivider()
-                    LabeledRow("Course code", course.courseCode)
-                    LabeledRow("Duration", course.duration)
-                    LabeledRow("Fee (before GST)", currency(course.fee))
-                    LabeledRow("Fee with GST (9%)", currency(course.feeWithGST))
-                }
-            }
-
-            Button(
-                onClick = { uriHandler.openUri(course.registerUrl) },
-                colors = ButtonDefaults.buttonColors(containerColor = Theme.accent),
-                modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) {
-                Icon(Icons.Filled.DateRange, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Check Schedule & Register", fontWeight = FontWeight.SemiBold)
-            }
-
-            Button(
-                onClick = { showGrantSheet = true },
-                colors = ButtonDefaults.buttonColors(containerColor = Theme.accent),
-                modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) {
-                Icon(Icons.Filled.Calculate, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Calculate My Grant & Net Fee", fontWeight = FontWeight.SemiBold)
-            }
-
-            OutlinedButton(
-                onClick = {
-                    val body = "Tertiary Courses Singapore course enquiry\n\n" +
-                        "Course: ${course.title}\n" +
-                        "Course code: ${course.courseCode}"
-                    uriHandler.openUri(whatsAppUrl(WHATSAPP_NUMBER, body))
-                },
-                modifier = Modifier.fillMaxWidth().height(50.dp)
-            ) {
-                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Theme.accent)
-                Spacer(Modifier.width(8.dp))
-                Text("Enquire via WhatsApp", color = Theme.accent, fontWeight = FontWeight.SemiBold)
-            }
-
-            InfoCard {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel("Funding")
-                    course.fundingSchemes.forEach { scheme ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (scheme.eligible) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
-                                contentDescription = if (scheme.eligible) "Eligible" else "Not eligible",
-                                tint = if (scheme.eligible) Theme.accent else Theme.secondaryText,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                scheme.abbreviation,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.width(48.dp)
-                            )
-                            Text(
-                                scheme.fullName,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Theme.secondaryText
-                            )
-                        }
-                    }
-                    Text(
-                        course.fundingTier.shortDescription,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Theme.secondaryText
-                    )
-                }
-            }
-
-            InfoCard {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionLabel("Outcomes")
-                    course.outcomes.forEach { outcome ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                tint = Theme.accent,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(outcome, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Grant calculator sheet launched from a course — the course fee is autopopulated;
-    // the user enters nationality, age, sponsorship, and SkillsFuture Credit.
-    if (showGrantSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showGrantSheet = false },
-            sheetState = sheetState,
-            containerColor = Theme.page
-        ) {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                InfoCard {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            course.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold
+                    Text(course.category, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                    Text(course.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 28.sp)
+                    Text(course.summary, fontSize = 15.sp, lineHeight = 21.sp)
+                    HorizontalDivider(color = Theme.cardBorder)
+                    LabeledValue("Course code", course.sku, fontSize = 15)
+                    if (course.duration.isNotEmpty()) LabeledValue("Duration", course.duration, fontSize = 15)
+                    if (course.price > 0) {
+                        LabeledValue(
+                            "Course fee",
+                            Fmt.money(course.price, course.currency) + if (Site.priceNote.isEmpty()) "" else "\n(${Site.priceNote})",
+                            fontSize = 15,
                         )
-                        LabeledRow("Course fee (before GST)", currency(course.fee))
-                        LabeledRow("Course fee with GST", currency(course.feeWithGST))
                     }
                 }
-                GrantCalculatorForm(course = course)
+            }
+            if (course.url.isNotEmpty()) PrimaryButton("View Schedule & Register", Icons.Filled.Event) { openUrl(context, course.url) }
+            TonalButton("Enquire via WhatsApp", Icons.AutoMirrored.Filled.Send) {
+                openWhatsApp(context, Site.whatsApp, "${Site.siteName} course enquiry\n\nCourse: ${course.title}\nCourse code: ${course.sku}")
             }
         }
     }

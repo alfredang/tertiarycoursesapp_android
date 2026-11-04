@@ -1,0 +1,10 @@
+{
+  "language": "en-SG",
+  "title": "TC LMS SG - Tertiary Courses",
+  "shortDescription": "Your Tertiary Courses Singapore classes, attendance, materials & certificates.",
+  "fullDescription": "TC LMS SG is the learner app for Tertiary Courses Singapore (www.tertiarycourses.com.sg). Sign in with the email you registered with and everything about your classes is in one place.\n\nSIGN IN YOUR WAY\n• Get a one-time code by email, or use your website password.\n\nMY CLASSES\n• See your current, upcoming and past classes with dates, times, venue or online class link, and trainer.\n• Join live online classes in one tap.\n\nDIGITAL ATTENDANCE\n• Check in to the current session from your phone when you arrive.\n• See which sessions you have attended.\n\nCLASS MATERIALS\n• Open your learner slides, learner guide, lesson plan and labs for each class.\n\nCOURSE FEEDBACK\n• Complete the in-house course feedback survey right in the app.\n\nCALENDAR\n• A month view of your class days, and \"Add My Classes to Calendar\" for your phone's calendar.\n\nCERTIFICATES\n• View and share your certificates once they are issued.\n\nBILLING\n• See your course registrations, payment status and invoice numbers.\n\nBROWSE COURSES\n• Explore our non-WSQ short courses, see durations and fees, and enquire on WhatsApp.\n\nYour learner account is created when you register for a course on www.tertiarycourses.com.sg. You can delete your account at any time from Account → Delete Account.",
+  "contactEmail": "enquiry@tertiaryinfotech.com",
+  "contactWebsite": "https://www.tertiarycourses.com.sg",
+  "releaseName": "1.3",
+  "releaseNotes": "TC LMS SG — the learner app for Tertiary Courses Singapore (non-WSQ courses):\n• Sign in with an email code or your website password\n• My Classes: current, upcoming and past classes\n• Digital attendance check-in\n• Class materials, course feedback survey\n• Calendar, certificates and billing\n• Browse courses; delete your account in Account"
+}

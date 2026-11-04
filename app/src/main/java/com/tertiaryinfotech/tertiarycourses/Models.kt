@@ -1,267 +1,343 @@
 package com.tertiaryinfotech.tertiarycourses
 
-import java.math.BigDecimal
-import java.math.RoundingMode
-import java.net.URLEncoder
-import java.text.NumberFormat
+import org.json.JSONArray
+import org.json.JSONObject
+import java.text.DecimalFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-enum class FundingTier(val label: String, val shortDescription: String) {
-    TIER1(
-        "Tier 1 SSG",
-        "Emerging skills, employability, SCTP, SkillsFuture Series, WPLN, or stackable IHL modules."
-    ),
-    TIER2(
-        "Tier 2 WSQ",
-        "WSQ or other approved skills courses supporting general upskilling and reskilling."
-    ),
-    UNFUNDED(
-        "No SSG funding",
-        "Not listed as SSG-funded. SkillsFuture Credit may still depend on official approval."
-    )
+// Shapes of the site's learner API (MMD_MobileApi). JSON keys are snake_case.
+
+// ── JSON helpers (org.json turns JSON null into the string "null" for optString) ──
+
+fun JSONObject.str(key: String): String =
+    if (!has(key) || isNull(key)) "" else optString(key, "")
+
+fun JSONObject.num(key: String): Double =
+    if (!has(key) || isNull(key)) 0.0 else optDouble(key, 0.0).let { if (it.isNaN()) 0.0 else it }
+
+fun JSONObject.int(key: String): Int = num(key).toInt()
+
+fun JSONObject.bool(key: String): Boolean = optBool(key) ?: false
+
+/** true / false / null — the API also sends 1/0 for some flags. */
+fun JSONObject.optBool(key: String): Boolean? {
+    if (!has(key) || isNull(key)) return null
+    return when (val v = opt(key)) {
+        is Boolean -> v
+        is Number -> v.toInt() != 0
+        is String -> v == "1" || v.equals("true", true)
+        else -> null
+    }
 }
 
-data class FundingScheme(val abbreviation: String, val fullName: String, val eligible: Boolean)
+fun JSONObject.obj(key: String): JSONObject? = if (!has(key) || isNull(key)) null else optJSONObject(key)
 
-/**
- * [fee] is the ORIGINAL course fee before GST. GST is always computed on this
- * original fee, per SSG rules — see
- * https://www.tpgateway.gov.sg/faq/grant-calculator-and-funding-eligibility
- */
+fun <T> JSONObject.list(key: String, map: (JSONObject) -> T): List<T> {
+    val arr = if (!has(key) || isNull(key)) null else optJSONArray(key)
+    return arr?.objects()?.map(map) ?: emptyList()
+}
+
+fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
+
+fun JSONObject.strings(key: String): List<String> {
+    val arr = (if (!has(key) || isNull(key)) null else optJSONArray(key)) ?: return emptyList()
+    return (0 until arr.length()).map { arr.optString(it) }.filter { it.isNotEmpty() }
+}
+
+// ── Learner ──
+
+data class Learner(val email: String, val firstName: String, val lastName: String, val fullName: String) {
+    fun toJson(): String = JSONObject()
+        .put("email", email).put("first_name", firstName).put("last_name", lastName).put("full_name", fullName)
+        .toString()
+
+    companion object {
+        fun from(j: JSONObject) = Learner(j.str("email"), j.str("first_name"), j.str("last_name"), j.str("full_name"))
+    }
+}
+
+// ── Catalog ──
+
+/** A public short course (C-prefix code) from `/mobileapi/catalog`. */
 data class Course(
-    val id: String,
+    val id: Int,
+    val sku: String,
     val title: String,
+    val summary: String,
     val category: String,
     val duration: String,
-    val delivery: String,
-    val fee: BigDecimal,
-    val fundingTier: FundingTier,
-    val skillsFutureClaimable: Boolean,
-    val courseCode: String,
-    val summary: String,
-    val outcomes: List<String>,
-    val websiteUrl: String? = null,
-    val sfecEligible: Boolean = true,
-    val pseaEligible: Boolean = true,
-    val utapEligible: Boolean = true
+    val price: Double,
+    val currency: String,
+    val url: String,
+    val imageUrl: String,
 ) {
-    val feeWithGST: BigDecimal
-        get() = (fee * (BigDecimal.ONE + GrantEstimate.GST_RATE)).setScale(2, RoundingMode.HALF_UP)
+    val searchIndex = "$sku $title $category $summary"
 
-    val isWSQCourse: Boolean
-        get() = courseCode.uppercase().startsWith("TGS")
+    companion object {
+        fun from(j: JSONObject) = Course(
+            j.int("id"), j.str("sku"), j.str("title"), j.str("summary"), j.str("category").ifEmpty { "Other Courses" },
+            j.str("duration"), j.num("price"), j.str("currency"), j.str("url"), j.str("image_url"),
+        )
+    }
+}
 
-    /** Short funding-scheme badges shown on course cards. */
-    val fundingBadges: List<String>
-        get() = buildList {
-            if (isWSQCourse) add("WSQ")
-            if (skillsFutureClaimable) add("SFC")
-            if (sfecEligible) add("SFEC")
-            if (pseaEligible) add("PSEA")
-            if (utapEligible) add("UTAP")
+// ── Classes ──
+
+data class CertificateInfo(
+    val runId: Int,
+    val classId: String,
+    val sku: String,
+    val title: String,
+    val startDate: String,
+    val endDate: String,
+    val certNo: String,
+    val issuedOn: String,
+    val name: String,
+    val url: String,
+) {
+    val id: String get() = certNo.ifEmpty { "$runId" }
+
+    companion object {
+        fun from(j: JSONObject) = CertificateInfo(
+            j.int("run_id"), j.str("class_id"), j.str("sku"), j.str("title"), j.str("start_date"), j.str("end_date"),
+            j.str("cert_no"), j.str("issued_on"), j.str("name"), j.str("url"),
+        )
+    }
+}
+
+/** A class in My Classes. `runId` is 0 for a registration still awaiting payment. */
+data class ClassItem(
+    val runId: Int,
+    val classId: String,
+    val sku: String,
+    val title: String,
+    val startDate: String,
+    val endDate: String,
+    val startTime: String,
+    val endTime: String,
+    val mode: String,
+    val venue: String,
+    val room: String,
+    val virtualLink: String,
+    val trainer: String,
+    val status: String,
+    val orderNo: String,
+    val bucket: String,
+    val days: List<String>,
+    val imageUrl: String,
+    val certificate: CertificateInfo?,
+    val surveySubmitted: Boolean,
+) {
+    val id: String get() = if (runId > 0) "run-$runId" else "order-$orderNo-$sku-$startDate"
+    val isPendingPayment: Boolean get() = status == "pending_payment"
+
+    /** Actual class dates; falls back to the start…end span when the site doesn't list them. */
+    val classDays: List<String>
+        get() {
+            if (days.isNotEmpty()) return days
+            val s = Fmt.date(startDate) ?: return emptyList()
+            val e = Fmt.date(endDate) ?: s
+            val out = mutableListOf<String>()
+            var d = s
+            while (!d.isAfter(e) && out.size < 14) {
+                out += d.toString(); d = d.plusDays(1)
+            }
+            return out
         }
 
-    /** Funding schemes with full names and eligibility, for the course detail page. */
-    val fundingSchemes: List<FundingScheme>
-        get() = listOf(
-            FundingScheme("WSQ", "Workforce Skills Qualifications (SSG-funded)", isWSQCourse),
-            FundingScheme("SFC", "SkillsFuture Credit", skillsFutureClaimable),
-            FundingScheme("SFEC", "SkillsFuture Enterprise Credit", sfecEligible),
-            FundingScheme("PSEA", "Post-Secondary Education Account", pseaEligible),
-            FundingScheme("UTAP", "NTUC Union Training Assistance Programme", utapEligible)
+    companion object {
+        fun from(j: JSONObject) = ClassItem(
+            j.int("run_id"), j.str("class_id"), j.str("sku"), j.str("title"), j.str("start_date"), j.str("end_date"),
+            j.str("start_time"), j.str("end_time"), j.str("mode"), j.str("venue"), j.str("room"), j.str("virtual_link"),
+            j.str("trainer"), j.str("status"), j.str("order_no"), j.str("bucket"), j.strings("days"), j.str("image_url"),
+            j.obj("certificate")?.let(CertificateInfo::from), j.bool("survey_submitted"),
         )
-
-    /**
-     * Course page on www.tertiarycourses.com.sg for registration. Falls back to a
-     * catalog search by title when no explicit page URL is known.
-     */
-    val registerUrl: String
-        get() = websiteUrl ?: (
-            "https://www.tertiarycourses.com.sg/catalogsearch/result/?q=" +
-                URLEncoder.encode(title.replace("WSQ - ", ""), "UTF-8")
-            )
-
-    val searchIndex: String
-        get() = (listOf(courseCode, title, category, duration, delivery, fundingTier.label, summary) + outcomes)
-            .joinToString(" ")
-}
-
-object CourseData {
-    val courses: List<Course> = listOf(
-        Course(
-            id = "TGS-2022015539",
-            title = "WSQ - Applications Integration with Power Apps and Power Automate",
-            category = "Microsoft Power Platform",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(800),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2022015539",
-            summary = "Build app and workflow integrations using Microsoft Power Apps and Power Automate.",
-            outcomes = listOf(
-                "Create low-code business apps",
-                "Automate approval workflows",
-                "Connect app data sources"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-applications-integration-with-power-apps-and-power-automate.html"
-        ),
-        Course(
-            id = "TGS-2019503161",
-            title = "WSQ - Python Fundamental Course for Beginners",
-            category = "Programming",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(750),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2019503161",
-            summary = "Learn beginner-friendly Python syntax, data structures, and practical scripting.",
-            outcomes = listOf(
-                "Write Python scripts",
-                "Use functions and collections",
-                "Solve beginner programming tasks"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-python-fundamental-course-for-beginners.html"
-        ),
-        Course(
-            id = "TGS-2019504058",
-            title = "WSQ - R Fundamental and Statistical Analysis for Beginners",
-            category = "Data Analytics",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(750),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2019504058",
-            summary = "Use R for introductory statistics, analysis workflows, and data exploration.",
-            outcomes = listOf(
-                "Run R scripts",
-                "Summarise datasets",
-                "Apply basic statistical analysis"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-r-fundamental-and-statistical-analysis-for-beginners.html"
-        ),
-        Course(
-            id = "TGS-2019504591",
-            title = "WSQ - Build and Deploy Python Applications with Vibe Coding",
-            category = "AI and Programming",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(750),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2019504591",
-            summary = "Create Python applications faster with AI-assisted coding workflows.",
-            outcomes = listOf(
-                "Plan app features",
-                "Use AI coding tools",
-                "Deploy a Python application"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-build-and-deploy-python-applications-with-vibe-coding.html"
-        ),
-        Course(
-            id = "TGS-2020503177",
-            title = "WSQ - Data Visualisation with Tableau",
-            category = "Data Visualisation",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(750),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2020503177",
-            summary = "Build Tableau dashboards and visual analytics for business reporting.",
-            outcomes = listOf(
-                "Connect data in Tableau",
-                "Design visual dashboards",
-                "Publish interactive views"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-data-visualisation-with-tableau.html"
-        ),
-        Course(
-            id = "TGS-2020503626",
-            title = "WSQ - Cyber Security Awareness Course for Personal and Businesses",
-            category = "Cybersecurity",
-            duration = "1 day",
-            delivery = "Classroom",
-            fee = BigDecimal(350),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2020503626",
-            summary = "Understand cyber threats, common attack patterns, and practical protection steps.",
-            outcomes = listOf(
-                "Identify phishing risks",
-                "Harden accounts and devices",
-                "Respond to common incidents"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-cyber-security-awareness-course-for-personal-and-businesses.html",
-            pseaEligible = false
-        ),
-        Course(
-            id = "TGS-2020504808",
-            title = "WSQ - Robotics Process Automation (RPA) for Beginners",
-            category = "Automation",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(750),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2020504808",
-            summary = "Use RPA concepts and tools to automate repeatable office processes.",
-            outcomes = listOf(
-                "Map automation workflows",
-                "Build simple bots",
-                "Test automated processes"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-robotics-process-automation-rpa-for-beginners.html"
-        ),
-        Course(
-            id = "TGS-2020505444",
-            title = "WSQ - Data Analytics and Visualization with Power BI",
-            category = "Business Intelligence",
-            duration = "2 days",
-            delivery = "Classroom",
-            fee = BigDecimal(800),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2020505444",
-            summary = "Create decision-ready Power BI reports with data shaping, models, and visual dashboards.",
-            outcomes = listOf(
-                "Transform data with Power Query",
-                "Create report visuals",
-                "Publish Power BI dashboards"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-data-analytics-and-visualization-with-power-bi.html"
-        ),
-        Course(
-            id = "TGS-2020505790",
-            title = "WSQ - SQL Fundamental for Beginners",
-            category = "Databases",
-            duration = "1 day",
-            delivery = "Classroom",
-            fee = BigDecimal(350),
-            fundingTier = FundingTier.TIER2,
-            skillsFutureClaimable = true,
-            courseCode = "TGS-2020505790",
-            summary = "Learn SQL queries for retrieving, filtering, joining, and summarising relational data.",
-            outcomes = listOf(
-                "Write SELECT queries",
-                "Filter and join tables",
-                "Aggregate business data"
-            ),
-            websiteUrl = "https://www.tertiarycourses.com.sg/wsq-sql-fundamental-for-beginners.html",
-            pseaEligible = false
-        )
-    )
-
-    fun courseById(id: String): Course = courses.first { it.id == id }
-}
-
-fun currency(amount: BigDecimal): String {
-    val formatter = NumberFormat.getNumberInstance(Locale.US).apply {
-        minimumFractionDigits = 2
-        maximumFractionDigits = 2
     }
-    val value = amount.setScale(2, RoundingMode.HALF_UP)
-    return if (value < BigDecimal.ZERO) "-S$${formatter.format(value.negate())}" else "S$${formatter.format(value)}"
+}
+
+data class ClassesReply(
+    val today: String,
+    val current: List<ClassItem>,
+    val upcoming: List<ClassItem>,
+    val past: List<ClassItem>,
+) {
+    val all: List<ClassItem> get() = current + upcoming + past
+
+    companion object {
+        fun from(j: JSONObject) = ClassesReply(
+            j.str("today"), j.list("current", ClassItem::from), j.list("upcoming", ClassItem::from), j.list("past", ClassItem::from),
+        )
+    }
+}
+
+data class ClassSession(val key: String, val day: Int, val part: String, val date: String, val label: String, val present: Boolean?) {
+    companion object {
+        fun from(j: JSONObject) = ClassSession(j.str("key"), j.int("day"), j.str("part"), j.str("date"), j.str("label"), j.optBool("present"))
+    }
+}
+
+data class AttendanceState(
+    val open: Boolean,
+    val currentSession: String,
+    val currentSessionLabel: String,
+    val markedPresent: Boolean,
+    val sessionsPresent: Int,
+    val sessionsTotal: Int,
+) {
+    companion object {
+        fun from(j: JSONObject?) = AttendanceState(
+            j?.bool("open") ?: false, j?.str("current_session") ?: "", j?.str("current_session_label") ?: "",
+            j?.bool("marked_present") ?: false, j?.int("sessions_present") ?: 0, j?.int("sessions_total") ?: 0,
+        )
+    }
+}
+
+data class Material(val key: String, val title: String, val url: String) {
+    companion object {
+        fun from(j: JSONObject) = Material(j.str("key"), j.str("title"), j.str("url"))
+    }
+}
+
+data class SurveyState(val available: Boolean, val submitted: Boolean, val externalUrl: String, val message: String) {
+    companion object {
+        fun from(j: JSONObject?) = SurveyState(
+            j?.bool("available") ?: false, j?.bool("submitted") ?: false, j?.str("external_url") ?: "", j?.str("message") ?: "",
+        )
+    }
+}
+
+data class ClassDetail(
+    val runId: Int,
+    val classId: String,
+    val sku: String,
+    val title: String,
+    val startDate: String,
+    val endDate: String,
+    val startTime: String,
+    val endTime: String,
+    val mode: String,
+    val venue: String,
+    val room: String,
+    val virtualLink: String,
+    val trainer: String,
+    val bucket: String,
+    val sessions: List<ClassSession>,
+    val attendance: AttendanceState,
+    val materials: List<Material>,
+    val documents: List<Material>,
+    val survey: SurveyState,
+    val certificate: CertificateInfo?,
+    val certificateRule: String,
+) {
+    companion object {
+        fun from(j: JSONObject) = ClassDetail(
+            j.int("run_id"), j.str("class_id"), j.str("sku"), j.str("title"), j.str("start_date"), j.str("end_date"),
+            j.str("start_time"), j.str("end_time"), j.str("mode"), j.str("venue"), j.str("room"), j.str("virtual_link"),
+            j.str("trainer"), j.str("bucket"), j.list("sessions", ClassSession::from), AttendanceState.from(j.obj("attendance")),
+            j.list("materials", Material::from), j.list("documents", Material::from), SurveyState.from(j.obj("survey")),
+            j.obj("certificate")?.let(CertificateInfo::from), j.str("certificate_rule"),
+        )
+    }
+}
+
+// ── Survey ──
+
+data class SurveyField(
+    val id: String,
+    val label: String,
+    val type: String,
+    val required: Boolean,
+    val readonly: Boolean,
+    val options: List<String>,
+    val value: String,
+) {
+    companion object {
+        fun from(j: JSONObject) = SurveyField(
+            j.str("id"), j.str("label"), j.str("type"), j.bool("required"), j.bool("readonly"), j.strings("options"), j.str("value"),
+        )
+    }
+}
+
+data class SurveySection(val id: String, val title: String, val fields: List<SurveyField>) {
+    companion object {
+        fun from(j: JSONObject) = SurveySection(j.str("id"), j.str("title"), j.list("fields", SurveyField::from))
+    }
+}
+
+data class Survey(val title: String, val state: SurveyState, val sections: List<SurveySection>) {
+    companion object {
+        fun from(j: JSONObject) = Survey(j.str("title"), SurveyState.from(j.obj("state")), j.list("sections", SurveySection::from))
+    }
+}
+
+// ── Billing ──
+
+data class OrderLine(val title: String, val sku: String, val qty: Double, val amount: Double, val classDate: String, val classTime: String) {
+    companion object {
+        fun from(j: JSONObject) = OrderLine(j.str("title"), j.str("sku"), j.num("qty"), j.num("amount"), j.str("class_date"), j.str("class_time"))
+    }
+}
+
+data class Order(
+    val orderNo: String,
+    val date: String,
+    val status: String,
+    val statusLabel: String,
+    val total: Double,
+    val paid: Double,
+    val refunded: Double,
+    val currency: String,
+    val paymentMethod: String,
+    val invoices: List<String>,
+    val items: List<OrderLine>,
+) {
+    companion object {
+        fun from(j: JSONObject) = Order(
+            j.str("order_no"), j.str("date"), j.str("status"), j.str("status_label"), j.num("total"), j.num("paid"),
+            j.num("refunded"), j.str("currency"), j.str("payment_method"), j.strings("invoices"), j.list("items", OrderLine::from),
+        )
+    }
+}
+
+// ── Formatting ──
+
+object Fmt {
+    private val en = Locale.ENGLISH
+    private val long = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", en)
+    private val dayMonth = DateTimeFormatter.ofPattern("d MMM", en)
+    private val dayMonthYear = DateTimeFormatter.ofPattern("d MMM yyyy", en)
+    val monthYear: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", en)
+
+    fun date(ymd: String): LocalDate? = try { if (ymd.isEmpty()) null else LocalDate.parse(ymd.take(10)) } catch (e: Exception) { null }
+
+    /** "Wed, 4 Nov 2026" */
+    fun longDate(ymd: String): String = date(ymd)?.format(long) ?: "Date to be confirmed"
+
+    /** "4 Nov – 5 Nov 2026" */
+    fun range(start: String, end: String): String {
+        val s = date(start) ?: return "Date to be confirmed"
+        val e = date(end)
+        if (e == null || end == start) return longDate(start)
+        return s.format(dayMonth) + " – " + e.format(dayMonthYear)
+    }
+
+    /** "09:30" → "9:30 am" */
+    fun time(hm: String): String {
+        val p = hm.split(":").mapNotNull { it.toIntOrNull() }
+        if (p.size < 2) return hm
+        val h12 = if (p[0] % 12 == 0) 12 else p[0] % 12
+        return String.format(en, "%d:%02d %s", h12, p[1], if (p[0] < 12) "am" else "pm")
+    }
+
+    fun times(start: String, end: String): String =
+        if (start.isEmpty()) "" else if (end.isEmpty()) time(start) else "${time(start)} – ${time(end)}"
+
+    /** "<CUR> 350" / "<CUR> 1,234.50" (site currency code) */
+    fun money(amount: Double, code: String): String {
+        val whole = Math.round(amount).toDouble() == amount
+        val n = DecimalFormat(if (whole) "#,##0" else "#,##0.00").format(amount)
+        return "${code.ifEmpty { Site.currency }} $n"
+    }
 }
