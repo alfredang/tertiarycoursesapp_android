@@ -20,8 +20,8 @@ android {
         applicationId = "com.tertiaryinfotech.tertiarycoursesapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.3"
+        versionCode = 3
+        versionName = "1.4"
     }
 
     signingConfigs {
@@ -72,5 +72,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    // QR matrix only (drawn in Compose) for the trainer's check-in code.
+    implementation("com.google.zxing:core:3.5.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

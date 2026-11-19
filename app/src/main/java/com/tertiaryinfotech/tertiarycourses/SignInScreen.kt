@@ -105,9 +105,9 @@ fun SignInScreen(vm: AppViewModel) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Learner sign in", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Text("Sign in", fontSize = 26.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "Use the email you registered with on ${Site.websiteLabel} to see your classes, materials, attendance, certificates and billing.",
+                    "Learners and trainers: use your ${Site.websiteLabel} email to see your classes, materials, attendance, certificates and billing.",
                     fontSize = 15.sp, color = Theme.secondaryText, lineHeight = 21.sp,
                 )
             }
@@ -120,8 +120,8 @@ fun SignInScreen(vm: AppViewModel) {
                         shape = SegmentedButtonDefaults.itemShape(i, Method.entries.size),
                         icon = {},
                         colors = SegmentedButtonDefaults.colors(
-                            activeContainerColor = Color.White, activeContentColor = Theme.accent, activeBorderColor = Theme.cardBorder,
-                            inactiveContainerColor = Color(0xFFEDEDF2), inactiveContentColor = Color(0xFF1C1C1E), inactiveBorderColor = Theme.cardBorder,
+                            activeContainerColor = Theme.card, activeContentColor = Theme.accent, activeBorderColor = Theme.cardBorder,
+                            inactiveContainerColor = Theme.field, inactiveContentColor = Theme.ink, inactiveBorderColor = Theme.cardBorder,
                         ),
                     ) { Text(m.label, fontWeight = if (method == m) FontWeight.SemiBold else FontWeight.Normal) }
                 }

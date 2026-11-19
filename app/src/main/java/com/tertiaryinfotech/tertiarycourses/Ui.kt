@@ -42,9 +42,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,50 +71,94 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 
-// White theme with the Tertiary Courses deep-blue brand accent, matching the iOS app.
+// White / deep-blue house theme (matching the website and the iOS app) with a dark
+// counterpart. Every colour is read through [Theme], which flips with [Theme.dark].
 object Theme {
-    val accent = Color(0xFF0B3D8E)       // deep blue #0B3D8E
-    val accentDark = Color(0xFF0A2D6F)   // gradient bottom #0A2D6F
-    val accentSoft = Color(0x1A0B3D8E)   // 10% deep blue
-    val success = Color(0xFF1C8C4A)
-    val warning = Color(0xFFCC7300)
-    val page = Color(0xFFF7F7FA)
-    val card = Color.White
-    val cardBorder = Color(0xFFE0E0E6)
-    val secondaryText = Color(0xFF6B6B72)
-    val tertiaryText = Color(0xFFAEAEB4)
-    val star = Color(0xFFFF9500)
-    val danger = Color(0xFFD32F2F)
+    /** Set by [AppTheme]; reading a colour in a composable recomposes when it changes. */
+    var dark by mutableStateOf(false)
+
+    /** Brand blue for TEXT and ICONS: #0B3D8E on light, a lighter tint on dark. */
+    val accent get() = if (dark) Color(0xFF9DBBFF) else Color(0xFF0B3D8E)
+    /** Brand blue for FILLED surfaces that carry white content (buttons, selected day). */
+    val brand get() = if (dark) Color(0xFF2B5FC2) else Color(0xFF0B3D8E)
+    val brandDark get() = if (dark) Color(0xFF1E4696) else Color(0xFF0A2D6F)
+    val accentSoft get() = if (dark) Color(0x339DBBFF) else Color(0x1A0B3D8E)
+    /** Tonal container (tonal buttons, nav indicator). */
+    val tonal get() = if (dark) Color(0xFF243657) else Color(0xFFDCE4F3)
+    val success get() = if (dark) Color(0xFF5FD08A) else Color(0xFF1C8C4A)
+    val warning get() = if (dark) Color(0xFFFFB454) else Color(0xFFCC7300)
+    val page get() = if (dark) Color(0xFF0F1115) else Color(0xFFF7F7FA)
+    val card get() = if (dark) Color(0xFF1A1D23) else Color.White
+    val cardBorder get() = if (dark) Color(0xFF2E323B) else Color(0xFFE0E0E6)
+    /** Inset fields / unselected segments. */
+    val field get() = if (dark) Color(0xFF262A32) else Color(0xFFEDEDF2)
+    val ink get() = if (dark) Color(0xFFECEDF1) else Color(0xFF1C1C1E)
+    val inkSoft get() = if (dark) Color(0xFFC4C7CF) else Color(0xFF3A3A3C)
+    val secondaryText get() = if (dark) Color(0xFFA4A8B2) else Color(0xFF6B6B72)
+    val tertiaryText get() = if (dark) Color(0xFF737884) else Color(0xFFAEAEB4)
+    val star get() = Color(0xFFFF9500)
+    val danger get() = if (dark) Color(0xFFFF7A70) else Color(0xFFD32F2F)
 }
 
-private val LightColors = lightColorScheme(
-    primary = Theme.accent,
+private fun scheme(dark: Boolean) = if (!dark) lightColorScheme(
+    primary = Color(0xFF0B3D8E),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFDCE4F3),
-    onPrimaryContainer = Theme.accent,
-    secondary = Theme.accent,
+    onPrimaryContainer = Color(0xFF0B3D8E),
+    secondary = Color(0xFF0B3D8E),
     onSecondary = Color.White,
     secondaryContainer = Color(0xFFDCE4F3),
-    onSecondaryContainer = Theme.accent,
-    tertiary = Theme.accent,
-    background = Theme.page,
+    onSecondaryContainer = Color(0xFF0B3D8E),
+    tertiary = Color(0xFF0B3D8E),
+    background = Color(0xFFF7F7FA),
     onBackground = Color(0xFF1C1C1E),
-    surface = Theme.page,
+    surface = Color(0xFFF7F7FA),
     onSurface = Color(0xFF1C1C1E),
     surfaceVariant = Color(0xFFEDEDF2),
-    onSurfaceVariant = Theme.secondaryText,
+    onSurfaceVariant = Color(0xFF6B6B72),
     surfaceContainer = Color.White,
     surfaceContainerLow = Color.White,
     surfaceContainerHigh = Color.White,
     surfaceContainerHighest = Color(0xFFEDEDF2),
     outline = Color(0xFFC7C7CC),
-    outlineVariant = Theme.cardBorder,
-    error = Theme.danger,
+    outlineVariant = Color(0xFFE0E0E6),
+    error = Color(0xFFD32F2F),
+) else darkColorScheme(
+    primary = Color(0xFF9DBBFF),
+    onPrimary = Color(0xFF06255C),
+    primaryContainer = Color(0xFF243657),
+    onPrimaryContainer = Color(0xFFDCE4F3),
+    secondary = Color(0xFF9DBBFF),
+    onSecondary = Color(0xFF06255C),
+    secondaryContainer = Color(0xFF243657),
+    onSecondaryContainer = Color(0xFFDCE4F3),
+    tertiary = Color(0xFF9DBBFF),
+    background = Color(0xFF0F1115),
+    onBackground = Color(0xFFECEDF1),
+    surface = Color(0xFF0F1115),
+    onSurface = Color(0xFFECEDF1),
+    surfaceVariant = Color(0xFF262A32),
+    onSurfaceVariant = Color(0xFFA4A8B2),
+    surfaceContainer = Color(0xFF1A1D23),
+    surfaceContainerLow = Color(0xFF1A1D23),
+    surfaceContainerHigh = Color(0xFF22262E),
+    surfaceContainerHighest = Color(0xFF262A32),
+    outline = Color(0xFF4A4F5A),
+    outlineVariant = Color(0xFF2E323B),
+    error = Color(0xFFFF7A70),
+    onError = Color(0xFF5A0A05),
 )
 
+/** [pref] is the account's saved appearance: "system" | "light" | "dark". */
 @Composable
-fun AppTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = LightColors, typography = Typography(), content = content)
+fun AppTheme(pref: String = "system", content: @Composable () -> Unit) {
+    val dark = when (pref) {
+        "dark" -> true
+        "light" -> false
+        else -> isSystemInDarkTheme()
+    }
+    Theme.dark = dark
+    MaterialTheme(colorScheme = scheme(dark), typography = Typography(), content = content)
 }
 
 // ── Brand ──
@@ -122,7 +170,7 @@ fun BrandBadge(size: Dp = 30.dp) {
         modifier = Modifier
             .size(size)
             .clip(RoundedCornerShape(size * 0.23f))
-            .background(Brush.verticalGradient(listOf(Theme.accent, Theme.accentDark))),
+            .background(Brush.verticalGradient(listOf(Color(0xFF0B3D8E), Color(0xFF0A2D6F)))),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -243,7 +291,7 @@ fun PrimaryButton(
 ) {
     Button(
         onClick = onClick, enabled = enabled && !busy, modifier = modifier.fillMaxWidth().height52(),
-        colors = ButtonDefaults.buttonColors(containerColor = Theme.accent),
+        colors = ButtonDefaults.buttonColors(containerColor = Theme.brand, contentColor = Color.White),
     ) { ButtonContent(text, icon, busy, Color.White) }
 }
 
@@ -251,7 +299,7 @@ fun PrimaryButton(
 fun TonalButton(text: String, icon: ImageVector? = null, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
     FilledTonalButton(
         onClick = onClick, enabled = enabled, modifier = modifier.fillMaxWidth().height52(),
-        colors = ButtonDefaults.filledTonalButtonColors(containerColor = Color(0xFFDCE4F3), contentColor = Theme.accent),
+        colors = ButtonDefaults.filledTonalButtonColors(containerColor = Theme.tonal, contentColor = Theme.accent),
     ) { ButtonContent(text, icon, false, Theme.accent) }
 }
 

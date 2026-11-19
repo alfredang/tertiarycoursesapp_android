@@ -31,6 +31,9 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,15 +46,27 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.light(AndroidColor.WHITE, AndroidColor.WHITE),
-        )
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         // Screenshot hooks are read only in debug builds (see AppViewModel.applyDebugHooks).
         vm.start(if (BuildConfig.DEBUG) intent?.extras else null)
         setContent {
-            AppTheme { RootScreen(vm) }
+            // Signed in: the account's saved appearance. Signed out: the device setting.
+            AppTheme(vm.themePref) {
+                val dark = Theme.dark
+                // System bar icons follow the app's appearance, not the device's.
+                LaunchedEffect(dark) {
+                    val bar = if (dark) 0xFF1A1D23.toInt() else AndroidColor.WHITE
+                    enableEdgeToEdge(
+                        statusBarStyle = if (dark) SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                        else SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT),
+                        navigationBarStyle = if (dark) SystemBarStyle.dark(bar) else SystemBarStyle.light(bar, bar),
+                    )
+                }
+                LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.onForeground() }
+                NotificationPermissionPrompt(vm)
+                RootScreen(vm)
+            }
         }
     }
 
@@ -104,7 +119,7 @@ private fun LearnerTabs(vm: AppViewModel) {
         when (index) {
             0 -> ClassesScreen(vm, push)
             1 -> CalendarScreen(vm, push)
-            2 -> CertificatesScreen(vm)
+            2 -> CertificatesScreen(vm, push)
             3 -> BillingScreen(vm)
             else -> AccountScreen(vm, push)
         }
@@ -131,7 +146,7 @@ private fun Tabs(
     Scaffold(
         containerColor = Theme.page,
         bottomBar = {
-            NavigationBar(containerColor = Color.White) {
+            NavigationBar(containerColor = Theme.card) {
                 tabs.forEachIndexed { index, spec ->
                     NavigationBarItem(
                         selected = selected == index,
@@ -144,9 +159,9 @@ private fun Tabs(
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Theme.accent,
                             selectedTextColor = Theme.accent,
-                            indicatorColor = Color(0xFFDCE4F3),
-                            unselectedIconColor = Color(0xFF3A3A3C),
-                            unselectedTextColor = Color(0xFF3A3A3C),
+                            indicatorColor = Theme.tonal,
+                            unselectedIconColor = Theme.inkSoft,
+                            unselectedTextColor = Theme.inkSoft,
                         ),
                     )
                 }
@@ -172,6 +187,9 @@ private fun RouteScreen(vm: AppViewModel, route: Route, push: (Route) -> Unit, p
     when (route) {
         is Route.ClassDetail -> ClassDetailScreen(vm, route.runId, route.title, push, pop)
         is Route.Survey -> SurveyScreen(vm, route.runId, pop)
+        is Route.TrainerClass -> TrainerClassScreen(vm, route.runId, route.title, push, pop)
+        is Route.Document -> DocumentScreen(route.title, route.url, pop)
+        Route.EditProfile -> EditProfileScreen(vm, pop)
         is Route.CourseDetail -> CourseDetailScreen(route.course, pop)
         Route.Catalog -> CatalogScreen(vm, push = push, onBack = pop)
         Route.Feedback -> FeedbackScreen(onBack = pop)

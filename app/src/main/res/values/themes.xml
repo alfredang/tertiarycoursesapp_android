@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light theme only (white / deep-blue house style, matching the website and the iOS app). -->
+    <!-- Launch window (light); values-night holds the dark one. Compose then applies the account's
+         saved appearance (System / Light / Dark) with its own colour schemes. -->
     <style name="Theme.TertiaryCourses" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/page_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>

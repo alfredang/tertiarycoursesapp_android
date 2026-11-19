@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WorkspacePremium
@@ -61,6 +62,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -130,7 +132,7 @@ fun CalendarScreen(vm: AppViewModel, push: (Route) -> Unit) {
                     Text(if (vm.classes == null) "Loading your classes…" else "No class on this day.", fontSize = 15.sp, color = Theme.secondaryText)
                 }
                 items.forEach { item ->
-                    ClassCard(item, onClick = if (item.runId > 0) ({ push(Route.ClassDetail(item.runId, item.title)) }) else null)
+                    ClassCard(item, showRole = vm.isTrainer, onClick = classRoute(item)?.let { r -> { push(r) } })
                 }
                 if (upcoming.isNotEmpty()) {
                     TonalButton("Add My Classes to Calendar", Icons.Filled.EditCalendar, modifier = Modifier.padding(top = 6.dp)) {
@@ -213,7 +215,7 @@ private fun DayCell(day: LocalDate, selected: String, today: String, hasClass: B
             .fillMaxWidth()
             .heightIn(min = 40.dp)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (isSelected) Theme.accent else if (hasClass) Theme.accentSoft else Color.Transparent)
+            .background(if (isSelected) Theme.brand else if (hasClass) Theme.accentSoft else Color.Transparent)
             .clickable { onSelect(key) }
             .semantics(mergeDescendants = true) { contentDescription = desc }
             .padding(vertical = 5.dp),
@@ -223,7 +225,7 @@ private fun DayCell(day: LocalDate, selected: String, today: String, hasClass: B
         Text(
             "${day.dayOfMonth}", fontSize = 15.sp,
             fontWeight = if (isToday || hasClass) FontWeight.Bold else FontWeight.Normal,
-            color = if (isSelected) Color.White else if (isToday) Theme.accent else Color(0xFF1C1C1E),
+            color = if (isSelected) Color.White else if (isToday) Theme.accent else Theme.ink,
         )
         Spacer(Modifier.height(3.dp))
         Box(Modifier.size(5.dp).clip(CircleShape).background(if (!hasClass) Color.Transparent else if (isSelected) Color.White else Theme.accent))
@@ -266,7 +268,7 @@ private fun addClassToCalendar(context: Context, item: ClassItem): String? {
 // ── Certificates ──
 
 @Composable
-fun CertificatesScreen(vm: AppViewModel) {
+fun CertificatesScreen(vm: AppViewModel, push: (Route) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     ScreenScaffold { padding ->
@@ -290,7 +292,7 @@ fun CertificatesScreen(vm: AppViewModel) {
                             if (cert.url.isNotEmpty()) {
                                 Spacer(Modifier.height(12.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    PrimaryButton("View PDF", Icons.Filled.Description, modifier = Modifier.weight(1f)) { openUrl(context, cert.url) }
+                                    PrimaryButton("View PDF", Icons.Filled.Description, modifier = Modifier.weight(1f)) { push(Route.Document(cert.title, cert.url)) }
                                     OutlineButton("Share", Icons.Filled.Share, modifier = Modifier.weight(1f)) {
                                         shareText(context, "${cert.title} — ${cert.name}\n${cert.url}", cert.title)
                                     }
@@ -382,10 +384,27 @@ fun AccountScreen(vm: AppViewModel, push: (Route) -> Unit) {
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            InfoCard {
-                Text(learner?.fullName?.ifBlank { null } ?: "Learner", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(2.dp))
-                Text(learner?.email.orEmpty(), fontSize = 15.sp, color = Theme.secondaryText)
+            InfoCard(modifier = Modifier.clickable { push(Route.EditProfile) }.testTag("editProfile")) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(learner?.fullName?.ifBlank { null } ?: "Learner", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                            if (vm.isTrainer) StatusChip("Trainer", Theme.accent)
+                        }
+                        Spacer(Modifier.height(2.dp))
+                        Text(learner?.email.orEmpty(), fontSize = 15.sp, color = Theme.secondaryText)
+                        if (learner?.phone?.isNotEmpty() == true) Text(learner.phone, fontSize = 15.sp, color = Theme.secondaryText)
+                    }
+                    Text("Edit", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText)
+                }
+            }
+
+            SectionLabel("Preferences", Modifier.padding(top = 10.dp, start = 4.dp))
+            InfoCard(padding = 0.dp) {
+                MenuRow(Icons.Filled.Palette, "Appearance", value = themeLabel(vm.themePref)) { push(Route.EditProfile) }
+                MenuDivider()
+                RemindersRow(vm)
             }
 
             SectionLabel("Explore", Modifier.padding(top = 10.dp, start = 4.dp))
@@ -465,6 +484,7 @@ fun MenuRow(
     chevron: Boolean = true,
     external: Boolean = false,
     busy: Boolean = false,
+    value: String = "",
     onClick: () -> Unit,
 ) {
     Row(
@@ -473,7 +493,8 @@ fun MenuRow(
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(14.dp))
-        Text(text, fontSize = 16.sp, color = if (tint == Theme.danger) Theme.danger else Color(0xFF1C1C1E), modifier = Modifier.weight(1f))
+        Text(text, fontSize = 16.sp, color = if (tint == Theme.danger) Theme.danger else Theme.ink, modifier = Modifier.weight(1f))
+        if (value.isNotEmpty()) Text(value, fontSize = 15.sp, color = Theme.secondaryText, modifier = Modifier.padding(end = 4.dp))
         when {
             busy -> CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(18.dp))
             external -> Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = Theme.tertiaryText, modifier = Modifier.size(18.dp))

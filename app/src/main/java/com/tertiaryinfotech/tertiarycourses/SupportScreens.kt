@@ -85,7 +85,7 @@ fun FeedbackScreen(onBack: (() -> Unit)? = null) {
                         Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (selected) Theme.accent else Theme.accentSoft)
+                            .background(if (selected) Theme.brand else Theme.accentSoft)
                             .clickable { category = item }
                             .padding(vertical = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -100,7 +100,7 @@ fun FeedbackScreen(onBack: (() -> Unit)? = null) {
             SectionLabel("Your feedback")
             val colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Theme.accent, unfocusedBorderColor = Theme.cardBorder,
-                focusedContainerColor = Color.White, unfocusedContainerColor = Color.White,
+                focusedContainerColor = Theme.card, unfocusedContainerColor = Theme.card,
             )
             OutlinedTextField(
                 value = title, onValueChange = { title = it }, placeholder = { Text("Short title") }, singleLine = true,
@@ -142,7 +142,7 @@ fun AboutScreen(onBack: (() -> Unit)? = null) {
                 }
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "The learner app for ${Site.siteName}. Sign in with your email code or password to see your current, upcoming and past classes, your class calendar and materials, check in to class, give course feedback, and download your certificates and billing records. You can also browse our courses.",
+                    "The app for learners and trainers of ${Site.siteName}. Sign in with your email code or password to see your current, upcoming and past classes, your class calendar and materials, check in to class, give course feedback, and download your certificates and billing records. Trainers see the classes they teach, take attendance and open the courseware. Class reminders are sent to your phone. You can also browse our courses.",
                     fontSize = 15.sp, color = Theme.secondaryText, lineHeight = 21.sp,
                 )
             }
@@ -171,7 +171,7 @@ fun AboutScreen(onBack: (() -> Unit)? = null) {
             SectionLabel("Data source", Modifier.padding(top = 10.dp, start = 4.dp))
             InfoCard {
                 Text(
-                    "Courses, classes, attendance, certificates and billing come from your learner account on ${Site.websiteLabel}.",
+                    "Courses, classes, attendance, certificates and billing come from your account on ${Site.websiteLabel}.",
                     fontSize = 15.sp, color = Theme.secondaryText, lineHeight = 21.sp,
                 )
             }

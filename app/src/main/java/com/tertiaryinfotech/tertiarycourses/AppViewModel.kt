@@ -24,6 +24,10 @@ sealed interface Route {
     data class ClassDetail(val runId: Int, val title: String) : Route
     data class CourseDetail(val course: Course) : Route
     data class Survey(val runId: Int) : Route
+    data class TrainerClass(val runId: Int, val title: String) : Route
+    /** A material, document or certificate shown inside the app. */
+    data class Document(val title: String, val url: String) : Route
+    data object EditProfile : Route
     data object Catalog : Route
     data object Feedback : Route
     data object About : Route
@@ -34,11 +38,23 @@ enum class Bucket(val label: String) { CURRENT("Current"), UPCOMING("Upcoming"),
 /** Signed-in state, the learner's LMS data, the public catalog and navigation. One per activity. */
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val tokens = TokenStore(app)
+    private val settings = Settings(app)
     val api = Api(tokens) { viewModelScope.launch { clear() } }
 
     var restoring by mutableStateOf(true); private set
     var learner by mutableStateOf<Learner?>(null); private set
-    var classes by mutableStateOf<ClassesReply?>(null); private set
+    /** Classes the account attends / teaches; [classes] is the two merged per bucket. */
+    private var learnerClasses by mutableStateOf<ClassesReply?>(null)
+    private var trainerClasses by mutableStateOf<ClassesReply?>(null)
+    val classes: ClassesReply? get() = ClassesReply.merge(learnerClasses, trainerClasses)
+    val isTrainer get() = learner?.isTrainer == true
+
+    /** Appearance: the account's saved theme while signed in, the device setting otherwise. */
+    var themePref by mutableStateOf(settings.theme); private set
+    var remindersOn by mutableStateOf(settings.remindersOn); private set
+    /** Bumped after each successful class load (the UI asks for notification permission once). */
+    var classLoads by mutableIntStateOf(0); private set
+    private var lastClassRefresh = 0L
     var certificates by mutableStateOf<List<CertificateInfo>?>(null); private set
     var orders by mutableStateOf<List<Order>?>(null); private set
     var loadError by mutableStateOf<String?>(null); private set
@@ -94,7 +110,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: ApiException) {
                 if (e.status == 401) clear() else {
                     // Offline: keep the token and the last profile; retry on refresh.
-                    tokens.learnerJson?.let { learner = Learner.from(JSONObject(it)) }
+                    tokens.learnerJson?.let { rememberLearner(Learner.from(JSONObject(it))) }
                     loadError = e.message
                 }
             }
@@ -120,6 +136,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         extras.getString("OPEN_BUCKET")?.let { b -> pendingBucket = Bucket.entries.firstOrNull { it.name.equals(b, true) } }
         if (extras.containsKey("OPEN_RUN_ID")) pendingRunId = extras.getInt("OPEN_RUN_ID").takeIf { it > 0 }
         if (extras.getBoolean("OPEN_SURVEY", false)) openSurveyOnce = true
+        extras.getString("UITEST_THEME")?.let { themeOverride = it; themePref = it }
         stacks.values.forEach { it.clear() }
         if (signOut) return true
         val creds = extras.getString("UITEST_SIGNIN") ?: run { applyPending(); return false }
@@ -165,9 +182,54 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (refresh) viewModelScope.launch { refreshAll() }
     }
 
+    private var themeOverride: String? = null   // debug screenshots only
+
     private fun rememberLearner(l: Learner) {
         learner = l
         tokens.learnerJson = l.toJson()
+        applyTheme(themeOverride ?: l.theme)
+    }
+
+    private fun applyTheme(pref: String) {
+        themePref = pref
+        settings.theme = pref
+    }
+
+    /**
+     * Saves the profile (any of first name, last name, phone, theme) to the account. The theme
+     * is applied on this device straight away, even when the site can't be reached.
+     */
+    suspend fun updateProfile(firstName: String, lastName: String, phone: String, theme: String): String {
+        applyTheme(theme)
+        val reply = try {
+            api.postAsync("profile", JSONObject()
+                .put("first_name", firstName.trim()).put("last_name", lastName.trim())
+                .put("phone", phone.trim()).put("theme", theme))
+        } catch (e: ApiException) {
+            // A site that hasn't been updated yet has no profile endpoint.
+            if (e.status == 404) throw ApiException("Your appearance is saved on this device. Editing your name and phone isn't available on this site yet.", 404)
+            throw e
+        }
+        reply.obj("learner")?.let { rememberLearner(Learner.from(it)) }
+        return reply.str("message").ifEmpty { "Profile updated." }
+    }
+
+    fun changeReminders(on: Boolean) {
+        remindersOn = on
+        settings.remindersOn = on
+        rescheduleReminders()
+    }
+
+    private fun rescheduleReminders() {
+        val all = if (remindersOn && learner != null) classes?.let { it.current + it.upcoming } ?: emptyList() else emptyList()
+        Reminders.schedule(getApplication(), Reminders.build(all))
+    }
+
+    /** The app came back to the foreground: reload the classes, at most once every 5 minutes. */
+    fun onForeground() {
+        if (!isSignedIn || restoring) return
+        if (System.currentTimeMillis() - lastClassRefresh < 5 * 60_000) return
+        viewModelScope.launch { refreshClasses() }
     }
 
     fun signOut() {
@@ -187,7 +249,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun clear() {
         tokens.clear()
         learner = null
-        classes = null
+        learnerClasses = null
+        trainerClasses = null
+        lastClassRefresh = 0
+        themeOverride = null
+        applyTheme("system")
+        Reminders.schedule(getApplication(), emptyList())
         certificates = null
         orders = null
         loadError = null
@@ -210,22 +277,48 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun refreshClasses() {
-        try {
-            val reply = ClassesReply.from(api.getAsync("learner/classes"))
-            classes = reply
-            loadError = null
-            if (bucket == null) {
-                bucket = when {
-                    reply.current.isNotEmpty() -> Bucket.CURRENT
-                    reply.upcoming.isNotEmpty() -> Bucket.UPCOMING
-                    reply.past.isNotEmpty() -> Bucket.PAST
-                    else -> Bucket.CURRENT
+        lastClassRefresh = System.currentTimeMillis()
+        var error: String? = null
+        coroutineScope {
+            val mine = async {
+                try { ClassesReply.from(api.getAsync("learner/classes")) } catch (e: ApiException) { error = e.message; null }
+            }
+            // Only trainers have a teaching list; an older site answers 404 and is ignored.
+            val teaching = async {
+                if (!isTrainer) null else try {
+                    ClassesReply.from(api.getAsync("trainer/classes")).let { r ->
+                        fun tag(l: List<ClassItem>) = l.map { it.copy(role = "trainer") }
+                        r.copy(current = tag(r.current), upcoming = tag(r.upcoming), past = tag(r.past))
+                    }
+                } catch (e: ApiException) {
+                    if (e.status != 404 && e.status != 403) error = e.message
+                    null
                 }
             }
-            applyPending()
-        } catch (e: ApiException) {
-            loadError = e.message
+            val l = mine.await()
+            val t = teaching.await()
+            if (l != null) learnerClasses = l
+            if (t != null || !isTrainer) trainerClasses = t
         }
+        val reply = classes
+        if (reply == null) {
+            loadError = error
+            return
+        }
+        loadError = error
+        if (bucket == null) {
+            bucket = when {
+                reply.current.isNotEmpty() -> Bucket.CURRENT
+                reply.upcoming.isNotEmpty() -> Bucket.UPCOMING
+                reply.past.isNotEmpty() -> Bucket.PAST
+                else -> Bucket.CURRENT
+            }
+        }
+        if (error == null) {
+            classLoads++
+            rescheduleReminders()
+        }
+        applyPending()
     }
 
     private fun applyPending() {
@@ -235,8 +328,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         pendingRunId?.let { id ->
             c.all.firstOrNull { it.runId == id }?.let { item ->
                 stack("learner0").apply {
-                    clear(); add(Route.ClassDetail(item.runId, item.title))
-                    if (openSurveyOnce) add(Route.Survey(item.runId))
+                    clear()
+                    if (item.isTeaching) add(Route.TrainerClass(item.runId, item.title))
+                    else {
+                        add(Route.ClassDetail(item.runId, item.title))
+                        if (openSurveyOnce) add(Route.Survey(item.runId))
+                    }
                 }
                 openSurveyOnce = false
                 learnerTab = 0
@@ -263,6 +360,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun classDetail(runId: Int): ClassDetail =
         ClassDetail.from(api.getAsync("learner/class", mapOf("run_id" to "$runId")).getJSONObject("class"))
+
+    suspend fun trainerClass(runId: Int): TrainerClassDetail =
+        TrainerClassDetail.from(api.getAsync("trainer/class", mapOf("run_id" to "$runId")).getJSONObject("class"))
+
+    /** Trainer: save who is present for one session. [records] = (email, name, present). */
+    suspend fun saveAttendance(runId: Int, sessionKey: String, records: List<Triple<String, String, Boolean>>): String {
+        val arr = org.json.JSONArray()
+        records.forEach { (email, name, present) -> arr.put(JSONObject().put("email", email).put("name", name).put("present", present)) }
+        val body = JSONObject().put("run_id", runId).put("session_key", sessionKey).put("records", arr)
+        return api.postAsync("trainer/attendance", body).str("message").ifEmpty { "Attendance saved." }
+    }
 
     suspend fun markAttendance(runId: Int): String =
         api.postAsync("learner/attendance", JSONObject().put("run_id", runId)).str("message")

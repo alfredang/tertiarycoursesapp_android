@@ -127,7 +127,7 @@ fun CatalogScreen(vm: AppViewModel, push: (Route) -> Unit, onBack: (() -> Unit)?
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = Color(0xFFEDEDF2), unfocusedContainerColor = Color(0xFFEDEDF2),
+                            focusedContainerColor = Theme.field, unfocusedContainerColor = Theme.field,
                             unfocusedBorderColor = Color.Transparent, focusedBorderColor = Theme.accent,
                         ),
                         modifier = Modifier.fillMaxWidth(),

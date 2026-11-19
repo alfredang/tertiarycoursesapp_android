@@ -3,6 +3,31 @@
 All notable changes to the TC LMS SG Android app (formerly Tertiary Courses SG).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4] — 2026-11-19 · versionCode 3
+
+Learners and trainers, in step with the iOS app (TC LMS SG 1.4).
+
+### Added
+- Trainers can sign in: the classes you teach (WSQ and non-WSQ) appear in My Classes and Calendar next to the classes you attend, marked **Teaching** or **Attending**.
+- Trainer class screen: take attendance for each session, show the learner check-in QR code, open your trainer courseware and see how many learners have given feedback.
+- Class reminders for learners and trainers: 3 days before a class, the evening before each class day and an hour before it starts. Switch them off in Account.
+- Class materials, documents and certificates now open inside the app, with Share and Open in Browser.
+- Edit Profile: change your first name, last name and phone number.
+- Appearance: choose System, Light or Dark; the choice is saved to your account and the app follows it.
+
+### Changed
+- My Classes reloads when you come back to the app (at most once every 5 minutes).
+- New permissions: notifications (class reminders) and run-at-startup (to keep reminders after a restart). Reminders are scheduled on the phone; no push service is used.
+- Sign-in and About now describe the app as serving learners and trainers.
+
+### Technical
+- New API calls: `GET/POST /mobileapi/profile`, `GET /mobileapi/trainer/classes`, `GET /mobileapi/trainer/class`, `POST /mobileapi/trainer/attendance`; every new field is optional, so the app still works against a site that has not been updated.
+- Dark colour scheme (Material 3) across every screen; new files `TrainerScreens.kt`, `ProfileScreens.kt`, `DocumentViewer.kt`, `Reminders.kt`.
+- `com.google.zxing:core` draws the check-in QR code.
+
+### Play submission
+- Production track, full rollout, published through the Play Developer API on 2026-11-19 (corporate account, Tertiary Infotech Academy Pte Ltd). Store listing text updated in the same edit.
+
 ## [1.3] — 2026-11-04 · versionCode 2
 
 Rewritten as **TC LMS SG**, the learner app for non-WSQ courses of www.tertiarycourses.com.sg —

@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Quiz
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.HighlightOff
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Person
@@ -122,17 +125,18 @@ fun ClassesScreen(vm: AppViewModel, push: (Route) -> Unit) {
                 item {
                     BucketPicker(bucket, count = { items(it).size }) { vm.bucket = it }
                 }
+                val err = vm.loadError
+                if (classes != null && err != null) item { ErrorCard(err) { scope.launch { vm.refreshClasses() } } }
                 when {
                     classes == null -> item {
-                        val err = vm.loadError
                         if (err != null) ErrorCard(err) { scope.launch { vm.refreshClasses() } }
                         else LoadingBox("Loading your classes…")
                     }
                     items(bucket).isEmpty() -> item {
-                        EmptyState(Icons.Filled.EventBusy, emptyTitle(bucket), emptyText(bucket))
+                        EmptyState(Icons.Filled.EventBusy, emptyTitle(bucket), emptyText(bucket, vm.isTrainer))
                     }
                     else -> items(items(bucket), key = { it.id }) { item ->
-                        ClassCard(item, onClick = if (item.runId > 0) ({ push(Route.ClassDetail(item.runId, item.title)) }) else null)
+                        ClassCard(item, showRole = vm.isTrainer, onClick = classRoute(item)?.let { r -> { push(r) } })
                     }
                 }
             }
@@ -150,11 +154,11 @@ private fun BucketPicker(selected: Bucket, count: (Bucket) -> Int, onSelect: (Bu
                 shape = SegmentedButtonDefaults.itemShape(i, Bucket.entries.size),
                 icon = {},
                 colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = Color.White,
+                    activeContainerColor = Theme.card,
                     activeContentColor = Theme.accent,
                     activeBorderColor = Theme.cardBorder,
-                    inactiveContainerColor = Color(0xFFEDEDF2),
-                    inactiveContentColor = Color(0xFF1C1C1E),
+                    inactiveContainerColor = Theme.field,
+                    inactiveContentColor = Theme.ink,
                     inactiveBorderColor = Theme.cardBorder,
                 ),
             ) {
@@ -173,16 +177,27 @@ private fun emptyTitle(b: Bucket) = when (b) {
     Bucket.PAST -> "No past classes yet"
 }
 
-private fun emptyText(b: Bucket) = when (b) {
+private fun emptyText(b: Bucket, trainer: Boolean) = if (trainer) when (b) {
+    Bucket.CURRENT -> "Classes you are teaching or attending today appear here, with attendance and courseware."
+    Bucket.UPCOMING -> "Classes you are scheduled to teach or attend will appear here."
+    Bucket.PAST -> "Classes you have taught or attended appear here."
+} else when (b) {
     Bucket.CURRENT -> "Classes that are running now appear here, with check-in and your materials."
     Bucket.UPCOMING -> "Register for a course on ${Site.websiteLabel} and it will appear here."
     Bucket.PAST -> "Completed classes, your feedback and certificates appear here."
 }
 
+/** Where a class card leads: the trainer or the learner class screen (none while payment is pending). */
+fun classRoute(item: ClassItem): Route? = when {
+    item.runId <= 0 -> null
+    item.isTeaching -> Route.TrainerClass(item.runId, item.title)
+    else -> Route.ClassDetail(item.runId, item.title)
+}
+
 fun modeIcon(mode: String): ImageVector = if (mode == "Live Online") Icons.Filled.Videocam else Icons.Filled.Apartment
 
 @Composable
-fun ClassCard(item: ClassItem, onClick: (() -> Unit)?) {
+fun ClassCard(item: ClassItem, showRole: Boolean = false, onClick: (() -> Unit)?) {
     InfoCard(modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier) {
         Row(verticalAlignment = Alignment.Top) {
             CourseThumb(item.imageUrl)
@@ -193,6 +208,8 @@ fun ClassCard(item: ClassItem, onClick: (() -> Unit)?) {
                     if (item.isPendingPayment) StatusChip("Pending payment", Theme.warning)
                     else if (item.bucket == "current") StatusChip("In progress", Theme.success)
                 }
+                // Trainers see which classes they teach and which they attend.
+                if (showRole) StatusChip(if (item.isTeaching) "Teaching" else "Attending", if (item.isTeaching) Theme.accent else Theme.secondaryText)
                 Text(item.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp)
             }
             if (onClick != null) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText)
@@ -202,7 +219,8 @@ fun ClassCard(item: ClassItem, onClick: (() -> Unit)?) {
             IconLine(Icons.Filled.Event, Fmt.range(item.startDate, item.endDate), color = Theme.secondaryText, iconTint = Theme.tertiaryText)
             if (item.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(item.startTime, item.endTime), color = Theme.secondaryText, iconTint = Theme.tertiaryText)
             if (item.mode.isNotEmpty()) IconLine(modeIcon(item.mode), item.mode, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
-            if (item.trainer.isNotEmpty()) IconLine(Icons.Filled.Person, item.trainer, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
+            if (item.trainer.isNotEmpty() && !item.isTeaching) IconLine(Icons.Filled.Person, item.trainer, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
+            if (item.isTeaching) IconLine(Icons.Filled.Groups, if (item.learnerCount == 1) "1 learner" else "${item.learnerCount} learners", color = Theme.secondaryText, iconTint = Theme.tertiaryText)
         }
         if (item.certificate != null || item.surveySubmitted) {
             Spacer(Modifier.height(10.dp))
@@ -263,9 +281,10 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
                                 }
                             }
                         }
-                        MaterialsCard(d) { openUrl(context, it.url) }
+                        MaterialsList("Class materials", (d.materials + d.documents).filter { it.url.isNotEmpty() },
+                            "Your trainer will share the materials for this class here.") { push(Route.Document(it.title, it.url)) }
                         SurveyCard(d, openExternal = { openUrl(context, d.survey.externalUrl) }) { push(Route.Survey(runId)) }
-                        CertificateCard(d) { openUrl(context, it.url) }
+                        CertificateCard(d) { push(Route.Document("Certificate", it.url)) }
                         SessionsCard(d)
                     }
                     error != null -> ErrorCard(error!!) { scope.launch { load() } }
@@ -293,12 +312,12 @@ private fun Overview(d: ClassDetail, join: () -> Unit) {
         Text(listOf(d.classId, d.sku).filter { it.isNotEmpty() }.joinToString(" · "), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
         HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Theme.cardBorder)
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            IconLine(Icons.Filled.Event, Fmt.range(d.startDate, d.endDate), fontSize = 15, iconTint = Color(0xFF1C1C1E))
-            if (d.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(d.startTime, d.endTime), fontSize = 15, iconTint = Color(0xFF1C1C1E))
-            if (d.mode.isNotEmpty()) IconLine(modeIcon(d.mode), d.mode, fontSize = 15, iconTint = Color(0xFF1C1C1E))
+            IconLine(Icons.Filled.Event, Fmt.range(d.startDate, d.endDate), fontSize = 15, iconTint = Theme.ink)
+            if (d.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(d.startTime, d.endTime), fontSize = 15, iconTint = Theme.ink)
+            if (d.mode.isNotEmpty()) IconLine(modeIcon(d.mode), d.mode, fontSize = 15, iconTint = Theme.ink)
             val place = listOf(d.room, d.venue).filter { it.isNotEmpty() }
-            if (place.isNotEmpty()) IconLine(Icons.Filled.Place, place.joinToString("\n"), fontSize = 15, iconTint = Color(0xFF1C1C1E))
-            if (d.trainer.isNotEmpty()) IconLine(Icons.Filled.Person, "Trainer: ${d.trainer}", fontSize = 15, iconTint = Color(0xFF1C1C1E))
+            if (place.isNotEmpty()) IconLine(Icons.Filled.Place, place.joinToString("\n"), fontSize = 15, iconTint = Theme.ink)
+            if (d.trainer.isNotEmpty()) IconLine(Icons.Filled.Person, "Trainer: ${d.trainer}", fontSize = 15, iconTint = Theme.ink)
         }
         if (d.virtualLink.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
@@ -333,36 +352,14 @@ private fun AttendanceCard(d: ClassDetail, checkingIn: Boolean, checkIn: () -> U
     }
 }
 
-private fun materialIcon(m: Material): ImageVector = when (m.key) {
-    "learner_slides_url" -> Icons.Filled.Slideshow
-    "learner_guide_url" -> Icons.AutoMirrored.Filled.MenuBook
-    "lesson_plan_url" -> Icons.AutoMirrored.Filled.ListAlt
-    "lab_url" -> Icons.Filled.Science
+fun materialIcon(m: Material): ImageVector = when (m.key) {
+    "learner_slides_url", "trainer_slides_url" -> Icons.Filled.Slideshow
+    "learner_guide_url", "facilitator_guide_url" -> Icons.AutoMirrored.Filled.MenuBook
+    "lesson_plan_url", "assessment_plan_url" -> Icons.AutoMirrored.Filled.ListAlt
+    "lab_url", "lab_simulator_url" -> Icons.Filled.Science
+    "practice_exam_url" -> Icons.Filled.Quiz
+    "courseware_folder_url" -> Icons.Filled.Folder
     else -> Icons.Filled.Description
-}
-
-@Composable
-private fun MaterialsCard(d: ClassDetail, open: (Material) -> Unit) {
-    val all = (d.materials + d.documents).filter { it.url.isNotEmpty() }
-    InfoCard {
-        SectionLabel("Class materials")
-        Spacer(Modifier.height(6.dp))
-        if (all.isEmpty()) {
-            Text("Your trainer will share the materials for this class here.", fontSize = 15.sp, color = Theme.secondaryText, modifier = Modifier.padding(vertical = 6.dp))
-        }
-        all.forEachIndexed { i, m ->
-            Row(
-                Modifier.fillMaxWidth().clickable { open(m) }.padding(vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(materialIcon(m), contentDescription = null, tint = Color(0xFF1C1C1E), modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(12.dp))
-                Text(m.title, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open", tint = Theme.tertiaryText, modifier = Modifier.size(20.dp))
-            }
-            if (i < all.lastIndex) HorizontalDivider(color = Theme.cardBorder)
-        }
-    }
 }
 
 @Composable

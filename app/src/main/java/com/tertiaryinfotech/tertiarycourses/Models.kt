@@ -48,13 +48,33 @@ fun JSONObject.strings(key: String): List<String> {
 
 // ── Learner ──
 
-data class Learner(val email: String, val firstName: String, val lastName: String, val fullName: String) {
+/**
+ * The signed-in account. `phone`, `theme` and `roles` arrive from 1.4 of the API; an older
+ * backend omits them (learner only, appearance follows the device).
+ */
+data class Learner(
+    val email: String,
+    val firstName: String,
+    val lastName: String,
+    val fullName: String,
+    val phone: String = "",
+    /** "system" | "light" | "dark" */
+    val theme: String = "system",
+    val roles: List<String> = listOf("learner"),
+) {
+    val isTrainer: Boolean get() = "trainer" in roles
+
     fun toJson(): String = JSONObject()
         .put("email", email).put("first_name", firstName).put("last_name", lastName).put("full_name", fullName)
+        .put("phone", phone).put("theme", theme).put("roles", JSONArray(roles))
         .toString()
 
     companion object {
-        fun from(j: JSONObject) = Learner(j.str("email"), j.str("first_name"), j.str("last_name"), j.str("full_name"))
+        fun from(j: JSONObject) = Learner(
+            j.str("email"), j.str("first_name"), j.str("last_name"), j.str("full_name"), j.str("phone"),
+            j.str("theme").lowercase().takeIf { it == "light" || it == "dark" } ?: "system",
+            j.strings("roles").map { it.lowercase() }.ifEmpty { listOf("learner") },
+        )
     }
 }
 
@@ -129,8 +149,12 @@ data class ClassItem(
     val imageUrl: String,
     val certificate: CertificateInfo?,
     val surveySubmitted: Boolean,
+    /** "learner" (attending) or "trainer" (teaching). */
+    val role: String = "learner",
+    val learnerCount: Int = 0,
 ) {
-    val id: String get() = if (runId > 0) "run-$runId" else "order-$orderNo-$sku-$startDate"
+    val isTeaching: Boolean get() = role == "trainer"
+    val id: String get() = if (runId > 0) "$role-run-$runId" else "order-$orderNo-$sku-$startDate"
     val isPendingPayment: Boolean get() = status == "pending_payment"
 
     /** Actual class dates; falls back to the start…end span when the site doesn't list them. */
@@ -153,6 +177,7 @@ data class ClassItem(
             j.str("start_time"), j.str("end_time"), j.str("mode"), j.str("venue"), j.str("room"), j.str("virtual_link"),
             j.str("trainer"), j.str("status"), j.str("order_no"), j.str("bucket"), j.strings("days"), j.str("image_url"),
             j.obj("certificate")?.let(CertificateInfo::from), j.bool("survey_submitted"),
+            if (j.str("role") == "trainer") "trainer" else "learner", j.int("learner_count"),
         )
     }
 }
@@ -168,6 +193,64 @@ data class ClassesReply(
     companion object {
         fun from(j: JSONObject) = ClassesReply(
             j.str("today"), j.list("current", ClassItem::from), j.list("upcoming", ClassItem::from), j.list("past", ClassItem::from),
+        )
+
+        /** The classes the account attends and the classes it teaches, as one list per bucket. */
+        fun merge(learner: ClassesReply?, trainer: ClassesReply?): ClassesReply? {
+            if (learner == null && trainer == null) return null
+            val l = learner ?: ClassesReply("", emptyList(), emptyList(), emptyList())
+            val t = trainer ?: ClassesReply("", emptyList(), emptyList(), emptyList())
+            return ClassesReply(
+                l.today.ifEmpty { t.today },
+                (l.current + t.current).sortedBy { it.startDate },
+                (l.upcoming + t.upcoming).sortedBy { it.startDate },
+                (l.past + t.past).sortedByDescending { it.endDate },
+            )
+        }
+    }
+}
+
+// ── Trainer ──
+
+data class RosterEntry(val name: String, val email: String, val phone: String, val walkin: Boolean, val present: Set<String>) {
+    companion object {
+        fun from(j: JSONObject) = RosterEntry(j.str("name"), j.str("email"), j.str("phone"), j.bool("walkin"), j.strings("present").toSet())
+    }
+}
+
+/** One class the account teaches, from `/mobileapi/trainer/class`. */
+data class TrainerClassDetail(
+    val runId: Int,
+    val classId: String,
+    val sku: String,
+    val title: String,
+    val startDate: String,
+    val endDate: String,
+    val startTime: String,
+    val endTime: String,
+    val mode: String,
+    val venue: String,
+    val room: String,
+    val virtualLink: String,
+    val trainer: String,
+    val bucket: String,
+    val sessions: List<ClassSession>,
+    val currentSession: String,
+    val currentSessionLabel: String,
+    val attendanceOpen: Boolean,
+    val checkinUrl: String,
+    val roster: List<RosterEntry>,
+    val materials: List<Material>,
+    val documents: List<Material>,
+    val surveyResponses: Int,
+) {
+    companion object {
+        fun from(j: JSONObject) = TrainerClassDetail(
+            j.int("run_id"), j.str("class_id"), j.str("sku"), j.str("title"), j.str("start_date"), j.str("end_date"),
+            j.str("start_time"), j.str("end_time"), j.str("mode"), j.str("venue"), j.str("room"), j.str("virtual_link"),
+            j.str("trainer"), j.str("bucket"), j.list("sessions", ClassSession::from), j.str("current_session"),
+            j.str("current_session_label"), j.bool("attendance_open"), j.str("checkin_url"), j.list("roster", RosterEntry::from),
+            j.list("materials", Material::from), j.list("documents", Material::from), j.int("survey_responses"),
         )
     }
 }

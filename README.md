@@ -6,12 +6,13 @@
 ![License](https://img.shields.io/badge/license-Proprietary-lightgrey)
 [![Get it on Google Play](https://img.shields.io/badge/Get%20it%20on-Google%20Play-414141?logo=googleplay&logoColor=white)](https://play.google.com/store/apps/details?id=com.tertiaryinfotech.tertiarycoursesapp)
 
-**TC LMS SG** is the learner app for the non-WSQ courses of
+**TC LMS SG** is the app for learners and trainers of
 [Tertiary Courses Singapore](https://www.tertiarycourses.com.sg/). Learners sign in with the email
-they registered with on the website to see their classes, check in, open class materials, give
-course feedback, and get their certificates and billing records. Anyone can browse the public
-course catalog. It is the Android counterpart of the iOS app of the same name, with the same
-features and the white / deep-blue (`#0B3D8E`) house design.
+they registered with on the website to see their non-WSQ classes, check in, open class materials, give
+course feedback, and get their certificates and billing records. Trainers sign in with their trainer
+account to see the classes they teach (WSQ and non-WSQ), take attendance and open the courseware.
+Anyone can browse the public course catalog. It is the Android counterpart of the iOS app of the same name, with the same
+features and the deep-blue (`#0B3D8E`) house design in light and dark.
 
 <p><a href="https://play.google.com/store/apps/details?id=com.tertiaryinfotech.tertiarycoursesapp"><img alt="Get it on Google Play" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" height="80"></a></p>
 
@@ -24,17 +25,29 @@ features and the white / deep-blue (`#0B3D8E`) house design.
   cached copy or the bundled snapshot.
 
 **Signed in** — bottom navigation: My Classes · Calendar · Certificates · Billing · Account
-- **My Classes** — Current / Upcoming / Past, with class detail: **Check In Now** (digital
-  attendance), class materials, **Give Feedback** (the site's survey with 1–5 star ratings),
-  certificate and per-session attendance.
+- **My Classes** — Current / Upcoming / Past, reloaded when the app returns to the foreground. A
+  trainer sees the classes they teach and attend together, tagged **Teaching** / **Attending**.
+- **Class detail (learner)** — **Check In Now** (digital attendance), class materials, **Give
+  Feedback** (the site's survey with 1–5 star ratings), certificate and per-session attendance.
+- **Class detail (trainer)** — **Take Attendance** (session picker, roster with present switches,
+  Save, present count), **Show Check-in QR**, trainer and learner courseware, feedback response count.
+- **In-app documents** — materials, documents and certificates open inside the app: PDFs are drawn
+  with `PdfRenderer` (pinch / double-tap to zoom), Google Drive and web pages in a WebView; Share and
+  Open in Browser in the title bar.
 - **Calendar** — month grid with class-day dots and the day's classes; *Add My Classes to Calendar*
   opens the calendar app's new-event screen for each class (no calendar permission needed).
+- **Class reminders** — local notifications 3 days before a class (09:00), the evening before each
+  class day (18:00) and one hour before the start (08:00 if the class has no time), in the site's
+  time zone. Scheduled on the device with inexact alarms; no push service.
 - **Certificates** — View PDF / Share.
 - **Billing** — orders with items, totals, payment method and invoices.
-- **Account** — Browse Courses, website, Send Feedback (WhatsApp), About, Privacy Policy, Sign Out,
-  Delete Account.
+- **Account** — Edit Profile (name, phone), Appearance (System / Light / Dark, saved to the account),
+  Class reminders switch, Browse Courses, website, Send Feedback (WhatsApp), About, Privacy Policy,
+  Sign Out, Delete Account.
 
-The only permission requested is `INTERNET`.
+Permissions: `INTERNET`; `POST_NOTIFICATIONS` (class reminders, asked once after the first class
+load on Android 13+); `RECEIVE_BOOT_COMPLETED` (reminders are set again after a restart). No
+exact-alarm, calendar, storage or location permission.
 
 ## Screenshots
 
@@ -64,9 +77,11 @@ the session and returns to sign-in.
 
 ## Tech Stack
 
-- **Kotlin 2.1** + **Jetpack Compose** (Material 3, light theme only), single activity, one `AppViewModel`
+- **Kotlin 2.1** + **Jetpack Compose** (Material 3, light and dark colour schemes; the account's saved appearance wins), single activity, one `AppViewModel`
 - **OkHttp 4.12** + `org.json` + coroutines — models parsed by hand (no reflection, R8-safe)
 - **androidx.security-crypto** `EncryptedSharedPreferences` for the session token
+- **ZXing core** for the check-in QR matrix; `PdfRenderer` + WebView for in-app documents;
+  `AlarmManager` (inexact) for class reminders
 - Min SDK 26 (Android 8.0) · Target/Compile SDK 36 · AGP 8.10 · Gradle 8.13
 
 ## Project Structure
@@ -76,12 +91,16 @@ app/src/main/java/com/tertiaryinfotech/tertiarycourses/
 ├── Site.kt            # THE per-country file (SG / MY / GH)
 ├── Api.kt             # OkHttp JSON client, User-Agent, 401 handling, encrypted token store
 ├── Models.kt          # API models (snake_case JSON → Kotlin) + date/time/money formatting
-├── AppViewModel.kt    # Session, LMS data, catalog (feed > cache > bundled), tab back stacks, debug hooks
+├── AppViewModel.kt    # Session, roles, LMS data (learner + trainer), profile, theme, catalog, back stacks, debug hooks
 ├── MainActivity.kt    # Activity, signed-out / signed-in bottom navigation, routing
-├── Ui.kt              # Theme, brand header, cards, buttons, image loader, intents
+├── Ui.kt              # Theme (light / dark palette), brand header, cards, buttons, image loader, intents
 ├── SignInScreen.kt    # Email code / password sign-in
 ├── ClassesScreens.kt  # My Classes, class detail (check-in, materials, certificate), survey
 ├── LearnerScreens.kt  # Calendar, Certificates, Billing, Account
+├── TrainerScreens.kt  # Trainer class: take attendance, check-in QR, courseware
+├── ProfileScreens.kt  # Edit Profile, Appearance, Class reminders switch, notification permission
+├── DocumentViewer.kt  # In-app PDF (PdfRenderer) and web (WebView) document viewer
+├── Reminders.kt       # Local class reminders (alarms, boot receiver) and device settings
 ├── CatalogScreens.kt  # Course catalog + course detail
 └── SupportScreens.kt  # Feedback (WhatsApp) and About
 app/src/main/assets/catalog.json   # offline catalog snapshot
@@ -117,7 +136,7 @@ keyPassword=...
 ```bash
 adb shell am start -n com.tertiaryinfotech.tertiarycoursesapp/com.tertiaryinfotech.tertiarycourses.MainActivity \
   --es UITEST_SIGNIN "email|password" --ei START_TAB 0 --ei OPEN_RUN_ID 900001 --ez OPEN_SURVEY true
-# also: --es OPEN_BUCKET current|upcoming|past   --ez UITEST_SIGNOUT true
+# also: --es OPEN_BUCKET current|upcoming|past   --es UITEST_THEME light|dark|system   --ez UITEST_SIGNOUT true
 ```
 
 The App Review account (`appreview@tertiarycourses.com.sg`; password in the gitignored `.env`) returns
@@ -125,7 +144,7 @@ sample data: run 900001 current, 900002 upcoming, 900003/900004 past.
 
 ## Release Notes
 
-See [CHANGELOG.md](CHANGELOG.md). Current version: **1.3 (2)**.
+See [CHANGELOG.md](CHANGELOG.md). Current version: **1.4 (3)**.
 
 ## Developer
 
