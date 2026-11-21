@@ -313,6 +313,8 @@ data class ClassDetail(
     val survey: SurveyState,
     val certificate: CertificateInfo?,
     val certificateRule: String,
+    /** Lesson quizzes of the class's course (empty on a site that predates them). */
+    val quizzes: List<QuizSummary>,
 ) {
     companion object {
         fun from(j: JSONObject) = ClassDetail(
@@ -321,7 +323,52 @@ data class ClassDetail(
             j.str("trainer"), j.str("bucket"), j.list("sessions", ClassSession::from), AttendanceState.from(j.obj("attendance")),
             j.list("materials", Material::from), j.list("documents", Material::from), SurveyState.from(j.obj("survey")),
             j.obj("certificate")?.let(CertificateInfo::from), j.str("certificate_rule"),
+            j.list("quizzes", QuizSummary::from),
         )
+    }
+}
+
+// ── Lesson quizzes ──
+
+data class QuizScore(val score: Int, val total: Int) {
+    companion object {
+        fun from(j: JSONObject) = QuizScore(j.int("score"), j.int("total"))
+    }
+}
+
+/** A quiz listed on the class page, with the learner's latest score. */
+data class QuizSummary(val quizId: Int, val title: String, val questions: Int, val previous: QuizScore?) {
+    companion object {
+        fun from(j: JSONObject) = QuizSummary(j.int("quiz_id"), j.str("title"), j.int("questions"), j.obj("previous")?.let(QuizScore::from))
+    }
+}
+
+data class QuizQuestion(val id: String, val question: String, val options: List<String>) {
+    companion object {
+        fun from(j: JSONObject) = QuizQuestion(j.str("id"), j.str("question"), j.strings("options"))
+    }
+}
+
+/** The questions of one quiz. The correct answers stay on the server until it is submitted. */
+data class Quiz(val quizId: Int, val title: String, val questions: List<QuizQuestion>) {
+    companion object {
+        fun from(j: JSONObject) = Quiz(j.int("quiz_id"), j.str("title"), j.list("questions", QuizQuestion::from))
+    }
+}
+
+/** One marked answer: [selectedIndex] is -1 when the question was left blank. */
+data class QuizAnswerResult(val id: String, val correct: Boolean, val correctIndex: Int, val selectedIndex: Int) {
+    companion object {
+        fun from(j: JSONObject) = QuizAnswerResult(
+            j.str("id"), j.bool("correct"), j.int("correct_index"),
+            if (j.isNull("selected_index")) -1 else j.int("selected_index"),
+        )
+    }
+}
+
+data class QuizResult(val score: Int, val total: Int, val breakdown: List<QuizAnswerResult>) {
+    companion object {
+        fun from(j: JSONObject) = QuizResult(j.int("score"), j.int("total"), j.list("breakdown", QuizAnswerResult::from))
     }
 }
 

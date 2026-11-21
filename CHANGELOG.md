@@ -3,6 +3,14 @@
 All notable changes to the TC LMS SG Android app (formerly Tertiary Courses SG).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5] — 2026-11-21 · versionCode 4
+
+Quizzes, in step with the iOS app (TC LMS SG 1.5).
+
+### Added
+- Quizzes: when your trainer sets a quiz for a class, take it on the class page. Pick an answer for each question, submit, and see your score with the correct answers marked.
+- Your latest score shows beside each quiz, and you can retake a quiz.
+
 ## [1.4] — 2026-11-19 · versionCode 3
 
 Learners and trainers, in step with the iOS app (TC LMS SG 1.4).

@@ -27,7 +27,8 @@ features and the deep-blue (`#0B3D8E`) house design in light and dark.
 **Signed in** — bottom navigation: My Classes · Calendar · Certificates · Billing · Account
 - **My Classes** — Current / Upcoming / Past, reloaded when the app returns to the foreground. A
   trainer sees the classes they teach and attend together, tagged **Teaching** / **Attending**.
-- **Class detail (learner)** — **Check In Now** (digital attendance), class materials, **Give
+- **Class detail (learner)** — **Check In Now** (digital attendance), class materials, **Quizzes**
+  (the lesson quizzes the trainer sets: answer, submit, see the score; scored and recorded by the site), **Give
   Feedback** (the site's survey with 1–5 star ratings), certificate and per-session attendance.
 - **Class detail (trainer)** — **Take Attendance** (session picker, roster with present switches,
   Save, present count), **Show Check-in QR**, trainer and learner courseware, feedback response count.
@@ -136,7 +137,7 @@ keyPassword=...
 ```bash
 adb shell am start -n com.tertiaryinfotech.tertiarycoursesapp/com.tertiaryinfotech.tertiarycourses.MainActivity \
   --es UITEST_SIGNIN "email|password" --ei START_TAB 0 --ei OPEN_RUN_ID 900001 --ez OPEN_SURVEY true
-# also: --es OPEN_BUCKET current|upcoming|past   --es UITEST_THEME light|dark|system   --ez UITEST_SIGNOUT true
+# also: --ei OPEN_QUIZ_ID 900101 (opens that quiz of the class)   --es OPEN_BUCKET current|upcoming|past   --es UITEST_THEME light|dark|system   --ez UITEST_SIGNOUT true
 ```
 
 The App Review account (`appreview@tertiarycourses.com.sg`; password in the gitignored `.env`) returns
@@ -144,7 +145,7 @@ sample data: run 900001 current, 900002 upcoming, 900003/900004 past.
 
 ## Release Notes
 
-See [CHANGELOG.md](CHANGELOG.md). Current version: **1.4 (3)**.
+See [CHANGELOG.md](CHANGELOG.md). Current version: **1.5 (4)**.
 
 ## Developer
 

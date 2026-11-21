@@ -24,6 +24,7 @@ sealed interface Route {
     data class ClassDetail(val runId: Int, val title: String) : Route
     data class CourseDetail(val course: Course) : Route
     data class Survey(val runId: Int) : Route
+    data class Quiz(val runId: Int, val quizId: Int, val title: String) : Route
     data class TrainerClass(val runId: Int, val title: String) : Route
     /** A material, document or certificate shown inside the app. */
     data class Document(val title: String, val url: String) : Route
@@ -71,6 +72,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Debug-only screenshot hooks. */
     private var openSurveyOnce = false
+    private var openQuizOnce = 0
     private var pendingRunId: Int? = null
     private var pendingBucket: Bucket? = null
 
@@ -136,6 +138,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         extras.getString("OPEN_BUCKET")?.let { b -> pendingBucket = Bucket.entries.firstOrNull { it.name.equals(b, true) } }
         if (extras.containsKey("OPEN_RUN_ID")) pendingRunId = extras.getInt("OPEN_RUN_ID").takeIf { it > 0 }
         if (extras.getBoolean("OPEN_SURVEY", false)) openSurveyOnce = true
+        openQuizOnce = extras.getInt("OPEN_QUIZ_ID", 0)
         extras.getString("UITEST_THEME")?.let { themeOverride = it; themePref = it }
         stacks.values.forEach { it.clear() }
         if (signOut) return true
@@ -333,9 +336,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     else {
                         add(Route.ClassDetail(item.runId, item.title))
                         if (openSurveyOnce) add(Route.Survey(item.runId))
+                        if (openQuizOnce > 0) add(Route.Quiz(item.runId, openQuizOnce, "Quiz"))
                     }
                 }
                 openSurveyOnce = false
+                openQuizOnce = 0
                 learnerTab = 0
             }
             pendingRunId = null
@@ -384,6 +389,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val msg = api.postAsync("learner/survey", body).str("message").ifEmpty { "Thank you for your feedback!" }
         refreshClasses()
         return msg
+    }
+
+    suspend fun quiz(runId: Int, quizId: Int): Quiz =
+        Quiz.from(api.getAsync("learner/quiz", mapOf("run_id" to "$runId", "quiz_id" to "$quizId")).getJSONObject("quiz"))
+
+    /** [answers] maps a question id to the chosen option index. The site scores and records the attempt. */
+    suspend fun submitQuiz(runId: Int, quizId: Int, answers: Map<String, Int>): QuizResult {
+        val body = JSONObject().put("run_id", runId).put("quiz_id", quizId).put("answers", JSONObject(answers as Map<*, *>))
+        return QuizResult.from(api.postAsync("learner/quiz", body))
     }
 
     // ── Catalog: fetched feed > on-device cache > bundled snapshot ──

@@ -187,6 +187,7 @@ private fun RouteScreen(vm: AppViewModel, route: Route, push: (Route) -> Unit, p
     when (route) {
         is Route.ClassDetail -> ClassDetailScreen(vm, route.runId, route.title, push, pop)
         is Route.Survey -> SurveyScreen(vm, route.runId, pop)
+        is Route.Quiz -> QuizScreen(vm, route.runId, route.quizId, route.title, pop)
         is Route.TrainerClass -> TrainerClassScreen(vm, route.runId, route.title, push, pop)
         is Route.Document -> DocumentScreen(route.title, route.url, pop)
         Route.EditProfile -> EditProfileScreen(vm, pop)

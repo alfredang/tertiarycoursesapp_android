@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Science
@@ -80,6 +82,8 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -283,6 +287,7 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
                         }
                         MaterialsList("Class materials", (d.materials + d.documents).filter { it.url.isNotEmpty() },
                             "Your trainer will share the materials for this class here.") { push(Route.Document(it.title, it.url)) }
+                        if (d.quizzes.isNotEmpty()) QuizzesCard(d.quizzes) { push(Route.Quiz(runId, it.quizId, it.title)) }
                         SurveyCard(d, openExternal = { openUrl(context, d.survey.externalUrl) }) { push(Route.Survey(runId)) }
                         CertificateCard(d) { push(Route.Document("Certificate", it.url)) }
                         SessionsCard(d)
@@ -360,6 +365,38 @@ fun materialIcon(m: Material): ImageVector = when (m.key) {
     "practice_exam_url" -> Icons.Filled.Quiz
     "courseware_folder_url" -> Icons.Filled.Folder
     else -> Icons.Filled.Description
+}
+
+/** Quizzes the course developer added to the Lesson, with the learner's latest score. */
+@Composable
+private fun QuizzesCard(quizzes: List<QuizSummary>, open: (QuizSummary) -> Unit) {
+    InfoCard {
+        SectionLabel("Quizzes")
+        Spacer(Modifier.height(6.dp))
+        quizzes.forEachIndexed { i, q ->
+            val count = "${q.questions} question${if (q.questions == 1) "" else "s"}"
+            Row(
+                Modifier.fillMaxWidth().clickable(onClickLabel = if (q.previous == null) "Start quiz" else "Retake quiz") { open(q) }
+                    .padding(vertical = 12.dp).testTag("quiz-${q.quizId}"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (q.previous == null) Icons.Filled.Quiz else Icons.Filled.CheckCircle, contentDescription = null,
+                    tint = if (q.previous == null) Theme.accent else Theme.success, modifier = Modifier.size(22.dp),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(q.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+                    Text(
+                        q.previous?.let { "$count · your score ${it.score} / ${it.total}" } ?: count,
+                        fontSize = 13.sp, color = Theme.secondaryText,
+                    )
+                }
+                Text(if (q.previous == null) "Start" else "Retake", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+            }
+            if (i < quizzes.lastIndex) HorizontalDivider(color = Theme.cardBorder)
+        }
+    }
 }
 
 @Composable
@@ -512,6 +549,134 @@ fun SurveyScreen(vm: AppViewModel, runId: Int, onClose: () -> Unit) {
             title = { Text("Thank you!") },
             text = { Text(msg) },
         )
+    }
+}
+
+// ── Quiz ──
+
+/**
+ * A lesson quiz: pick one option per question, submit, see the score. The site
+ * scores the answers and records the attempt against the learner and the class.
+ */
+@Composable
+fun QuizScreen(vm: AppViewModel, runId: Int, quizId: Int, title: String, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var quiz by remember { mutableStateOf<Quiz?>(null) }
+    val answers = remember { mutableStateMapOf<String, Int>() }
+    var result by remember { mutableStateOf<QuizResult?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var submitting by remember { mutableStateOf(false) }
+
+    suspend fun load() {
+        try {
+            quiz = vm.quiz(runId, quizId); error = null
+        } catch (e: Exception) {
+            error = e.message
+        }
+    }
+    LaunchedEffect(quizId) { load() }
+
+    val unanswered = quiz?.questions?.count { it.id !in answers } ?: 0
+
+    ScreenScaffold(
+        title = quiz?.title?.ifEmpty { null } ?: title,
+        onBack = onClose,
+        navigationIcon = Icons.Filled.Close,
+        actions = {
+            if (result == null) {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            submitting = true
+                            try {
+                                result = vm.submitQuiz(runId, quizId, answers.toMap()); error = null
+                            } catch (e: Exception) {
+                                error = e.message
+                            } finally {
+                                submitting = false
+                            }
+                        }
+                    },
+                    enabled = quiz != null && unanswered == 0 && !submitting,
+                    modifier = Modifier.testTag("submitQuiz"),
+                ) { Text(if (submitting) "Submitting…" else "Submit", fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
+            }
+        },
+    ) { padding ->
+        Column(
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            val q = quiz
+            val r = result
+            if (q != null) {
+                if (r != null) {
+                    InfoCard(Modifier.testTag("quizScore").semantics(mergeDescendants = true) {}) {
+                        Text("Your score", fontSize = 14.sp, color = Theme.secondaryText)
+                        Text("${r.score} / ${r.total}", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = Theme.ink)
+                        Text("Your score has been recorded.", fontSize = 13.sp, color = Theme.secondaryText)
+                    }
+                }
+                q.questions.forEachIndexed { qi, question ->
+                    val marked = r?.breakdown?.firstOrNull { it.id == question.id }
+                    Text(
+                        "${qi + 1}. ${question.question}", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink,
+                        modifier = Modifier.padding(top = 10.dp, start = 4.dp),
+                    )
+                    InfoCard(padding = 0.dp) {
+                        question.options.forEachIndexed { oi, option ->
+                            val chosen = answers[question.id] == oi
+                            val isCorrect = marked?.correctIndex == oi
+                            val wrongPick = marked != null && chosen && !isCorrect
+                            val state = when {
+                                marked == null -> if (chosen) "Selected" else "Not selected"
+                                isCorrect -> "Correct answer"
+                                wrongPick -> "Your answer, incorrect"
+                                else -> ""
+                            }
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .selectable(selected = chosen, enabled = r == null, role = Role.RadioButton) { answers[question.id] = oi }
+                                    .semantics { stateDescription = state }
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    when {
+                                        marked == null -> if (chosen) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked
+                                        isCorrect -> Icons.Filled.CheckCircle
+                                        wrongPick -> Icons.Filled.HighlightOff
+                                        else -> Icons.Filled.RadioButtonUnchecked
+                                    },
+                                    contentDescription = null,
+                                    tint = when {
+                                        marked == null -> if (chosen) Theme.accent else Theme.secondaryText
+                                        isCorrect -> Theme.success
+                                        wrongPick -> Theme.danger
+                                        else -> Theme.secondaryText
+                                    },
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Text(option, fontSize = 16.sp, color = Theme.ink, modifier = Modifier.weight(1f))
+                            }
+                            if (oi < question.options.lastIndex) HorizontalDivider(Modifier.padding(start = 16.dp), color = Theme.cardBorder)
+                        }
+                    }
+                }
+                error?.let { Text(it, color = Theme.danger, fontSize = 13.sp) }
+                if (r != null) {
+                    TonalButton("Take the Quiz Again") { answers.clear(); result = null }
+                } else if (unanswered > 0) {
+                    Text("Answer every question to submit ($unanswered left).", fontSize = 13.sp, color = Theme.secondaryText)
+                }
+                Spacer(Modifier.height(24.dp))
+            } else if (error != null) {
+                ErrorCard(error!!) { scope.launch { load() } }
+            } else {
+                LoadingBox()
+            }
+        }
     }
 }
 
