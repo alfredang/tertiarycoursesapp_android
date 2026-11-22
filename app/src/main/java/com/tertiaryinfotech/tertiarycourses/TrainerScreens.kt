@@ -175,12 +175,6 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                                     surveyQr = SurveyLink("Course Survey", d.feedbackUrl, "Learners scan this to give their course feedback.")
                                 }
                             }
-                            if (d.traqomUrl.isNotEmpty()) {
-                                Spacer(Modifier.height(10.dp))
-                                TonalButton("Show TRAQOM Survey QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("showTraqomQR")) {
-                                    surveyQr = SurveyLink("TRAQOM Survey", d.traqomUrl, "Every learner must complete the SSG TRAQOM survey before the class ends.")
-                                }
-                            }
                         }
                     }
                     error != null -> ErrorCard(error!!) { scope.launch { load() } }

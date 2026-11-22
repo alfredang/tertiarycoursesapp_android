@@ -75,7 +75,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         settings.loginRole = role
     }
 
-    private val isOwner get() = learner?.email?.lowercase() == OWNER_EMAIL
+    /** The one account that can switch roles, and only in the Singapore app: MY and GH look the same for everyone. */
+    private val isOwner get() = Site.code == "SG" && learner?.email?.lowercase() == OWNER_EMAIL
 
     val availableRoles: List<String>
         get() {
@@ -85,7 +86,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (!isOwner) return listOf(if (loginRole == "trainer" && l.isTrainer) "trainer" else "learner")
             val roles = if (l.isTrainer) mutableListOf("trainer", "learner") else mutableListOf("learner")
             // The franchise dashboard belongs to the Singapore site only.
-            roles += staffRoleNames.keys.filter { it in l.roles && (it != "franchise_admin" || Site.code == "SG") }
+            roles += staffRoleNames.keys.filter { it in l.roles }
             return roles
         }
     val canSwitchRole get() = availableRoles.size > 1

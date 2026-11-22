@@ -14,6 +14,12 @@ dest="$(cd "${1:?usage: sync_variant.sh <variant-project>}" && pwd)"
 [ "$src" != "$dest" ] || { echo "refusing to sync onto itself"; exit 1; }
 [ -f "$dest/$pkg/Site.kt" ] || { echo "$dest has no $pkg/Site.kt"; exit 1; }
 
+# HARD RULE (22 Nov 2026): TC LMS is the non-WSQ app (C-prefix courses only). WSQ
+# classes, SSG attendance and the TRAQOM survey belong to the TIA app. The API
+# enforces the course filter (ai-mms scripts/audit/check-mobileapi-nonwsq.sh);
+# this stops a WSQ-only feature being built into the apps.
+"$src/scripts/check_nonwsq.sh" "$src/$pkg" || exit 1
+
 for f in "$src/$pkg"/*.kt; do
     name=$(basename "$f")
     [ "$name" = "Site.kt" ] && continue
@@ -31,5 +37,5 @@ cp "$src/app/src/main/res/xml/file_paths.xml" "$dest/app/src/main/res/xml/"
 grep -q 'androidx.core.content.FileProvider' "$dest/app/src/main/AndroidManifest.xml" \
     || echo "WARNING: $dest AndroidManifest.xml has no FileProvider <provider> block; copy it from the SG manifest"
 mkdir -p "$dest/scripts"
-cp "$src/scripts/play_release.py" "$src/scripts/sync_variant.sh" "$dest/scripts/"
+cp "$src/scripts/play_release.py" "$src/scripts/sync_variant.sh" "$src/scripts/check_nonwsq.sh" "$dest/scripts/"
 echo "synced shared source into $dest"

@@ -253,9 +253,8 @@ data class TrainerClassDetail(
     val materials: List<Material>,
     val documents: List<Material>,
     val surveyResponses: Int,
-    /** Links the trainer shows the class; TRAQOM is set only for SSG-funded classes in Singapore. */
+    /** The course survey link the trainer shows the class. */
     val feedbackUrl: String,
-    val traqomUrl: String,
 ) {
     companion object {
         fun from(j: JSONObject) = TrainerClassDetail(
@@ -264,7 +263,7 @@ data class TrainerClassDetail(
             j.str("trainer"), j.str("bucket"), j.list("sessions", ClassSession::from), j.str("current_session"),
             j.str("current_session_label"), j.bool("attendance_open"), j.str("checkin_url"), j.list("roster", RosterEntry::from),
             j.list("materials", Material::from), j.list("documents", Material::from), j.int("survey_responses"),
-            j.str("feedback_url"), j.str("traqom_url"),
+            j.str("feedback_url"),
         )
     }
 }
