@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.ui.draw.clip
@@ -117,61 +119,78 @@ fun Refreshable(onRefresh: suspend () -> Unit, modifier: Modifier = Modifier, co
 // ── Home header ──
 
 /**
- * Top of the home tab (the staff Dashboard, or My Classes): a welcome, a link to the
- * profile, and (for the owner account only) the role switcher.
+ * Top of the home tab (the staff Dashboard, or My Classes), in the TIA house layout: a
+ * "Welcome back" card with the name, the role and a My Profile link (the whole card opens
+ * Account), then (for the owner account only) a "View as" row to switch role.
  */
 @Composable
 fun HomeHeader(vm: AppViewModel) {
     var roleMenu by remember { mutableStateOf(false) }
+    val fullName = vm.learner?.fullName.orEmpty()
+    val role = AppViewModel.roleName(vm.activeRole)
+    val shape = RoundedCornerShape(18.dp)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            AvatarView(vm.avatar, vm.learner?.fullName.orEmpty(), 48.dp)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Welcome", fontSize = 15.sp, color = Theme.secondaryText)
-                Text(
-                    vm.learner?.firstName?.ifBlank { null } ?: "back", fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+        Column(
+            Modifier.fillMaxWidth().clip(shape).background(Theme.card).border(1.dp, Theme.cardBorder, shape)
+                .clickable(onClickLabel = "My Profile", role = Role.Button) { vm.learnerTab = AppViewModel.TAB_ACCOUNT }
+                .padding(18.dp).testTag("myProfileLink"),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Welcome back", fontSize = 15.sp, color = Theme.secondaryText, modifier = Modifier.weight(1f))
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText, modifier = Modifier.size(20.dp))
             }
-            Spacer(Modifier.width(8.dp))
-            Row(
-                Modifier.clip(RoundedCornerShape(50)).background(Theme.accentSoft)
-                    .clickable { vm.learnerTab = AppViewModel.TAB_ACCOUNT }
-                    .padding(horizontal = 12.dp, vertical = 8.dp).testTag("myProfileLink"),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(18.dp))
-                Text("My Profile", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1)
+            ShrinkingName(if (fullName.isBlank()) "Welcome" else fullName.uppercase(), Theme.ink)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    role, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1,
+                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Theme.accentSoft).padding(horizontal = 12.dp, vertical = 5.dp),
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(20.dp))
+                    Text("My Profile", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1)
+                }
             }
         }
         if (vm.canSwitchRole) {
             Box {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Theme.brand).clickable { roleMenu = true }
-                        .padding(horizontal = 14.dp, vertical = 10.dp).testTag("viewAsPicker"),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier.fillMaxWidth().clip(shape).background(Theme.card).border(1.dp, Theme.cardBorder, shape)
+                        .clickable(onClickLabel = "Change role", role = Role.DropdownList) { roleMenu = true }
+                        .padding(horizontal = 18.dp, vertical = 14.dp).testTag("viewAsPicker"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Icon(Icons.Filled.SwapHoriz, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Text(
-                        "Viewing as ${AppViewModel.roleName(vm.activeRole)}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
-                        color = Color.White, modifier = Modifier.weight(1f),
-                    )
-                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Icon(Icons.Filled.Visibility, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(22.dp))
+                    Text("View as", fontSize = 17.sp, color = Theme.secondaryText, modifier = Modifier.weight(1f))
+                    Text(role, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink, maxLines = 1)
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = Theme.secondaryText, modifier = Modifier.size(18.dp))
                 }
                 DropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }, containerColor = Theme.card) {
-                    vm.availableRoles.forEach { role ->
+                    vm.availableRoles.forEach { r ->
                         DropdownMenuItem(
-                            text = { Text(AppViewModel.roleName(role)) },
-                            trailingIcon = { if (role == vm.activeRole) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Theme.accent) },
-                            onClick = { roleMenu = false; vm.switchRole(role) },
-                            modifier = Modifier.testTag("viewAs-$role"),
+                            text = { Text(AppViewModel.roleName(r)) },
+                            trailingIcon = { if (r == vm.activeRole) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Theme.accent) },
+                            onClick = { roleMenu = false; vm.switchRole(r) },
+                            modifier = Modifier.testTag("viewAs-$r"),
                         )
                     }
                 }
             }
         }
     }
+}
+
+/** The name in the header: heavy 26sp on up to two lines, shrinking (to 60%) until it fits. */
+@Composable
+private fun ShrinkingName(name: String, color: Color) {
+    var size by remember(name) { mutableStateOf(26f) }
+    var fitted by remember(name) { mutableStateOf(false) }
+    Text(
+        name, fontSize = size.sp, lineHeight = (size * 1.2f).sp, fontWeight = FontWeight.ExtraBold, color = color,
+        maxLines = 2, overflow = TextOverflow.Ellipsis,
+        onTextLayout = { if (it.hasVisualOverflow && size > 26f * 0.6f) size = (size - 1f).coerceAtLeast(26f * 0.6f) else fitted = true },
+        modifier = Modifier.fillMaxWidth().drawWithContent { if (fitted) drawContent() },
+    )
 }
 
 // ── My Classes ──
