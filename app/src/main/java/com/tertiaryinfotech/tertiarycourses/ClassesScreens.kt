@@ -1,6 +1,16 @@
 package com.tertiaryinfotech.tertiarycourses
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -104,6 +114,66 @@ fun Refreshable(onRefresh: suspend () -> Unit, modifier: Modifier = Modifier, co
     ) { content() }
 }
 
+// ── Home header ──
+
+/**
+ * Top of the home tab (the staff Dashboard, or My Classes): a welcome, a link to the
+ * profile, and (for the owner account only) the role switcher.
+ */
+@Composable
+fun HomeHeader(vm: AppViewModel) {
+    var roleMenu by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AvatarView(vm.avatar, vm.learner?.fullName.orEmpty(), 48.dp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Welcome", fontSize = 15.sp, color = Theme.secondaryText)
+                Text(
+                    vm.learner?.firstName?.ifBlank { null } ?: "back", fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Row(
+                Modifier.clip(RoundedCornerShape(50)).background(Theme.accentSoft)
+                    .clickable { vm.learnerTab = AppViewModel.TAB_ACCOUNT }
+                    .padding(horizontal = 12.dp, vertical = 8.dp).testTag("myProfileLink"),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Filled.AccountCircle, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(18.dp))
+                Text("My Profile", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1)
+            }
+        }
+        if (vm.canSwitchRole) {
+            Box {
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Theme.brand).clickable { roleMenu = true }
+                        .padding(horizontal = 14.dp, vertical = 10.dp).testTag("viewAsPicker"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Filled.SwapHoriz, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Text(
+                        "Viewing as ${AppViewModel.roleName(vm.activeRole)}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold,
+                        color = Color.White, modifier = Modifier.weight(1f),
+                    )
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                }
+                DropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }, containerColor = Theme.card) {
+                    vm.availableRoles.forEach { role ->
+                        DropdownMenuItem(
+                            text = { Text(AppViewModel.roleName(role)) },
+                            trailingIcon = { if (role == vm.activeRole) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Theme.accent) },
+                            onClick = { roleMenu = false; vm.switchRole(role) },
+                            modifier = Modifier.testTag("viewAs-$role"),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ── My Classes ──
 
 @Composable
@@ -124,8 +194,7 @@ fun ClassesScreen(vm: AppViewModel, push: (Route) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                val name = vm.learner?.firstName.orEmpty()
-                if (name.isNotEmpty()) item { Text("Hi $name 👋", fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+                if (vm.staffRole == null) item { HomeHeader(vm) }
                 item {
                     BucketPicker(bucket, count = { items(it).size }) { vm.bucket = it }
                 }

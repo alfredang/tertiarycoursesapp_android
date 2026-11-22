@@ -41,6 +41,11 @@ class Settings(context: Context) {
         get() = prefs.getString("view_role", "") ?: ""
         set(value) = prefs.edit { if (value.isEmpty()) remove("view_role") else putString("view_role", value) }
 
+    /** The role picked on the sign-in screen ("learner" or "trainer"); null when signed in before it was asked. */
+    var loginRole: String?
+        get() = prefs.getString("login_role", null)
+        set(value) = prefs.edit { if (value == null) remove("login_role") else putString("login_role", value) }
+
     /** The notification permission prompt is shown once, after the first class load. */
     var askedNotifications: Boolean
         get() = prefs.getBoolean("asked_notifications", false)

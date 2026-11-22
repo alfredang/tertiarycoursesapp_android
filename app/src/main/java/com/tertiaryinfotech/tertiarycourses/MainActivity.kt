@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -33,6 +34,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.Lifecycle
@@ -138,6 +140,14 @@ private fun LearnerTabs(vm: AppViewModel) {
             AppViewModel.TAB_FOURTH -> if (trainer) TrainingHoursScreen(vm) else BillingScreen(vm)
             else -> AccountScreen(vm, push)
         }
+    }
+    vm.roleNotice?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { vm.roleNotice = null },
+            confirmButton = { TextButton(onClick = { vm.roleNotice = null }) { Text("OK") } },
+            title = { Text("Signed in") },
+            text = { Text(msg) },
+        )
     }
 }
 

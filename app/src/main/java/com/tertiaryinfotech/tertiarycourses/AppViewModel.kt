@@ -58,25 +58,41 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Roles ──
     //
-    // The app shows one role at a time. A trainer can look at the app as a learner
-    // (their own classes, certificates and billing). Staff dashboards are offered to
-    // the owner account only, and only for roles the website says it holds. The
-    // choice changes what this device shows, never what the server allows.
+    // The app shows one role at a time: the one picked on the sign-in screen (Learner
+    // or Trainer; a trainer who is taking courses signs in as a learner to see them).
+    // Only the owner account can switch role while signed in, and is also offered the
+    // staff dashboards for the roles the website says it holds. The choice changes
+    // what this device shows, never what the server allows.
 
     private var viewRole by mutableStateOf(settings.viewRole)
+    /** The role picked on the sign-in screen: "learner" (default) or "trainer". */
+    var loginRole by mutableStateOf(settings.loginRole ?: "learner"); private set
+    /** Shown once after sign-in when the chosen role is not available. */
+    var roleNotice by mutableStateOf<String?>(null)
+
+    fun chooseLoginRole(role: String) {
+        loginRole = role
+        settings.loginRole = role
+    }
+
+    private val isOwner get() = learner?.email?.lowercase() == OWNER_EMAIL
 
     val availableRoles: List<String>
         get() {
             val l = learner ?: return emptyList()
+            // Everyone else has exactly one role per sign-in: the one chosen on the
+            // sign-in screen, or Learner when the account does not teach.
+            if (!isOwner) return listOf(if (loginRole == "trainer" && l.isTrainer) "trainer" else "learner")
             val roles = if (l.isTrainer) mutableListOf("trainer", "learner") else mutableListOf("learner")
-            if (l.email.lowercase() == OWNER_EMAIL) {
-                // The franchise dashboard belongs to the Singapore site only.
-                roles += staffRoleNames.keys.filter { it in l.roles && (it != "franchise_admin" || Site.code == "SG") }
-            }
+            // The franchise dashboard belongs to the Singapore site only.
+            roles += staffRoleNames.keys.filter { it in l.roles && (it != "franchise_admin" || Site.code == "SG") }
             return roles
         }
     val canSwitchRole get() = availableRoles.size > 1
-    val activeRole: String get() = availableRoles.let { if (viewRole in it) viewRole else it.firstOrNull() ?: "learner" }
+    val activeRole: String
+        get() = availableRoles.let { roles ->
+            if (viewRole in roles) viewRole else if (loginRole in roles) loginRole else roles.firstOrNull() ?: "learner"
+        }
     /** Showing the trainer view (teaching list, Payout and Hours tabs). */
     val isTrainer get() = activeRole == "trainer"
     /** The staff role being viewed, or null in the trainer and learner views. */
@@ -88,8 +104,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         settings.viewRole = role
         if (!isTrainer) trainerClasses = null
         // Screens pushed in the other role's tabs do not belong to this one.
-        stacks.forEach { (key, stack) -> if (key.startsWith("learner") && key != "learner$TAB_ACCOUNT") stack.clear() }
+        stacks.forEach { (key, stack) -> if (key.startsWith("learner")) stack.clear() }
+        learnerTab = if (staffRole != null) TAB_DASHBOARD else TAB_CLASSES
         viewModelScope.launch { refreshClasses() }
+    }
+
+    /** A staff view opens on its dashboard. */
+    private fun openHomeTab() {
+        if (staffRole != null && learnerTab == TAB_CLASSES) learnerTab = TAB_DASHBOARD
     }
 
     /** The profile picture; null shows the initials. */
@@ -162,11 +184,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val me = api.getAsync("auth/me")
                 rememberLearner(Learner.from(me.getJSONObject("learner")))
+                openHomeTab()
                 refreshAll()
             } catch (e: ApiException) {
                 if (e.status == 401) clear() else {
                     // Offline: keep the token and the last profile; retry on refresh.
-                    tokens.learnerJson?.let { rememberLearner(Learner.from(JSONObject(it))) }
+                    tokens.learnerJson?.let { rememberLearner(Learner.from(JSONObject(it))); openHomeTab() }
                     loadError = e.message
                 }
             }
@@ -235,13 +258,24 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         tokens.token = token
         stacks.values.forEach { it.clear() }
         bucket = null
-        rememberLearner(Learner.from(reply.getJSONObject("learner")))
+        // Record the role picked on the sign-in screen (the default, Learner, included).
+        settings.loginRole = loginRole
+        viewRole = ""
+        settings.viewRole = ""
+        val l = Learner.from(reply.getJSONObject("learner"))
+        rememberLearner(l)
+        openHomeTab()
+        if (loginRole == "trainer" && !l.isTrainer) {
+            roleNotice = "This account does not teach any classes, so you are signed in as a learner."
+        }
         if (refresh) viewModelScope.launch { refreshAll() }
     }
 
     private var themeOverride: String? = null   // debug screenshots only
 
     private fun rememberLearner(l: Learner, syncPicture: Boolean = true) {
+        // Signed in before the sign-in screen asked for a role: keep trainers in the trainer view.
+        if (settings.loginRole == null) chooseLoginRole(if (l.isTrainer) "trainer" else "learner")
         learner = l
         tokens.learnerJson = l.toJson()
         applyTheme(themeOverride ?: l.theme)
@@ -397,6 +431,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         avatarLoadedVersion = null
         viewRole = ""
         settings.viewRole = ""
+        chooseLoginRole("learner")
+        roleNotice = null
         certDrafts.clear()
         certsLoaded = false
         payouts = null

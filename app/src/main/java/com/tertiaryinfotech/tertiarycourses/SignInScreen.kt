@@ -112,6 +112,31 @@ fun SignInScreen(vm: AppViewModel) {
                 )
             }
 
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Sign in as", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                val roles = listOf("learner" to "Learner", "trainer" to "Trainer")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().testTag("loginRole")) {
+                    roles.forEachIndexed { i, (key, label) ->
+                        SegmentedButton(
+                            selected = vm.loginRole == key,
+                            onClick = { vm.chooseLoginRole(key) },
+                            shape = SegmentedButtonDefaults.itemShape(i, roles.size),
+                            icon = {},
+                            colors = SegmentedButtonDefaults.colors(
+                                activeContainerColor = Theme.card, activeContentColor = Theme.accent, activeBorderColor = Theme.cardBorder,
+                                inactiveContainerColor = Theme.field, inactiveContentColor = Theme.ink, inactiveBorderColor = Theme.cardBorder,
+                            ),
+                            modifier = Modifier.testTag("loginRole-$key"),
+                        ) { Text(label, fontWeight = if (vm.loginRole == key) FontWeight.SemiBold else FontWeight.Normal) }
+                    }
+                }
+                Text(
+                    if (vm.loginRole == "trainer") "See the classes you teach, attendance, payout and training hours."
+                    else "See the courses you are taking. Trainers attending a course sign in as a learner.",
+                    fontSize = 13.sp, color = Theme.secondaryText, lineHeight = 18.sp,
+                )
+            }
+
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 Method.entries.forEachIndexed { i, m ->
                     SegmentedButton(

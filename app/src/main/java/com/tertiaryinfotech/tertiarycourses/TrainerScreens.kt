@@ -400,7 +400,9 @@ fun QrCode(text: String, modifier: Modifier = Modifier, description: String = "C
 
 /** Loads a tab's data once (it is kept in the view model), with pull-to-refresh and a retry card. */
 @Composable
-private fun <T> LoadedTab(data: T?, key: Any, load: suspend () -> Unit, content: @Composable (T) -> Unit) {
+private fun <T> LoadedTab(
+    data: T?, key: Any, load: suspend () -> Unit, header: @Composable () -> Unit = {}, content: @Composable (T) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     var error by remember(key) { mutableStateOf<String?>(null) }
     suspend fun run() {
@@ -414,6 +416,7 @@ private fun <T> LoadedTab(data: T?, key: Any, load: suspend () -> Unit, content:
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                header()
                 val err = error
                 when {
                     data != null -> content(data)
@@ -521,8 +524,7 @@ fun TrainingHoursScreen(vm: AppViewModel) {
 /** One glanceable screen per staff role; the cards and lists are whatever the site sends. */
 @Composable
 fun StaffDashboardScreen(vm: AppViewModel, role: String) {
-    LoadedTab(vm.staffDashboard?.takeIf { it.role == role }, role, { vm.loadStaffDashboard(role) }) { data ->
-        Text(AppViewModel.roleName(role), fontSize = 26.sp, fontWeight = FontWeight.Bold)
+    LoadedTab(vm.staffDashboard?.takeIf { it.role == role }, role, { vm.loadStaffDashboard(role) }, header = { HomeHeader(vm) }) { data ->
         data.cards.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 pair.forEach { StaffCardView(it, Modifier.weight(1f).fillMaxHeight()) }

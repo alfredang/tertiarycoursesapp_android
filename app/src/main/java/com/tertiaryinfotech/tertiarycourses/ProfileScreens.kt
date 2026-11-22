@@ -40,7 +40,6 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.ArrowOutward
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Link
@@ -48,7 +47,6 @@ import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Photo
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -130,7 +128,6 @@ fun ProfileSections(vm: AppViewModel) {
     var avatarBusy by remember { mutableStateOf(false) }
     var avatarError by remember { mutableStateOf<String?>(null) }
     var pictureMenu by remember { mutableStateOf(false) }
-    var roleMenu by remember { mutableStateOf(false) }
 
     // Trainer on the website, whatever view is showing.
     val isRealTrainer = learner?.isTrainer == true
@@ -191,30 +188,7 @@ fun ProfileSections(vm: AppViewModel) {
             learner?.fullName?.ifBlank { null } ?: "My account", fontSize = 22.sp, fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center, lineHeight = 28.sp,
         )
-        if (vm.canSwitchRole) {
-            Box {
-                Row(
-                    Modifier.clip(RoundedCornerShape(50)).background(Theme.brand).clickable { roleMenu = true }
-                        .padding(horizontal = 14.dp, vertical = 7.dp).testTag("viewAsPicker"),
-                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp),
-                ) {
-                    Text("Viewing as ${AppViewModel.roleName(vm.activeRole)}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                }
-                DropdownMenu(expanded = roleMenu, onDismissRequest = { roleMenu = false }, containerColor = Theme.card) {
-                    vm.availableRoles.forEach { role ->
-                        DropdownMenuItem(
-                            text = { Text(AppViewModel.roleName(role)) },
-                            trailingIcon = { if (role == vm.activeRole) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Theme.accent) },
-                            onClick = { roleMenu = false; vm.switchRole(role) },
-                            modifier = Modifier.testTag("viewAs-$role"),
-                        )
-                    }
-                }
-            }
-        } else {
-            StatusChip(AppViewModel.roleName(vm.activeRole), Theme.accent)
-        }
+        StatusChip(AppViewModel.roleName(vm.activeRole), Theme.accent)
         if (badges.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally), verticalArrangement = Arrangement.spacedBy(6.dp),
