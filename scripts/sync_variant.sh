@@ -24,6 +24,12 @@ for f in "$dest/$pkg"/*.kt; do
     name=$(basename "$f")
     [ "$name" = "Site.kt" ] || [ -f "$src/$pkg/$name" ] || rm -v "$f"
 done
+# The document viewer's Download shares files through a FileProvider: its path
+# list is shared; the <provider> block in AndroidManifest.xml must exist too.
+mkdir -p "$dest/app/src/main/res/xml"
+cp "$src/app/src/main/res/xml/file_paths.xml" "$dest/app/src/main/res/xml/"
+grep -q 'androidx.core.content.FileProvider' "$dest/app/src/main/AndroidManifest.xml" \
+    || echo "WARNING: $dest AndroidManifest.xml has no FileProvider <provider> block; copy it from the SG manifest"
 mkdir -p "$dest/scripts"
 cp "$src/scripts/play_release.py" "$src/scripts/sync_variant.sh" "$dest/scripts/"
 echo "synced shared source into $dest"
