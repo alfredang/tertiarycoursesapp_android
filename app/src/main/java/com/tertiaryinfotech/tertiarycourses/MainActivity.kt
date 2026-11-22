@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // Screenshot hooks are read only in debug builds (see AppViewModel.applyDebugHooks).
         vm.start(if (BuildConfig.DEBUG) intent?.extras else null)
+        // Opened by the site at the end of admin sign-in with Google (app was closed meanwhile).
+        vm.onAuthCallback(intent?.data)
         setContent {
             // Signed in: the account's saved appearance. Signed out: the device setting.
             AppTheme(vm.themePref) {
@@ -76,6 +78,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        vm.onAuthCallback(intent.data)
         if (BuildConfig.DEBUG) vm.onNewLaunch(intent.extras)
     }
 }

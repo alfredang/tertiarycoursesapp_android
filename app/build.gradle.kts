@@ -22,6 +22,9 @@ android {
         targetSdk = 36
         versionCode = 4
         versionName = "1.5"
+        // URL scheme the site returns to after admin sign-in with Google:
+        // "tclms" + the lower-case Site.code (SG tclmssg, MY tclmsmy, GH tclmsgh).
+        manifestPlaceholders["authScheme"] = "tclmssg"
     }
 
     signingConfigs {

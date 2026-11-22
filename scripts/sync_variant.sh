@@ -36,6 +36,12 @@ mkdir -p "$dest/app/src/main/res/xml"
 cp "$src/app/src/main/res/xml/file_paths.xml" "$dest/app/src/main/res/xml/"
 grep -q 'androidx.core.content.FileProvider' "$dest/app/src/main/AndroidManifest.xml" \
     || echo "WARNING: $dest AndroidManifest.xml has no FileProvider <provider> block; copy it from the SG manifest"
+# Admin sign-in with Google returns to the app's own URL scheme: the intent filter
+# lives in the manifest and the scheme in app/build.gradle.kts, both per project.
+grep -q 'authScheme' "$dest/app/src/main/AndroidManifest.xml" \
+    || echo "WARNING: $dest AndroidManifest.xml has no \${authScheme} intent filter on MainActivity; copy it from the SG manifest"
+grep -q 'authScheme' "$dest/app/build.gradle.kts" \
+    || echo "WARNING: $dest app/build.gradle.kts sets no manifestPlaceholders[\"authScheme\"] (tclms + lower-case Site.code)"
 mkdir -p "$dest/scripts"
 cp "$src/scripts/play_release.py" "$src/scripts/sync_variant.sh" "$src/scripts/check_nonwsq.sh" "$dest/scripts/"
 echo "synced shared source into $dest"

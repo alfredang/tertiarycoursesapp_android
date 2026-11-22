@@ -46,6 +46,15 @@ class Settings(context: Context) {
         get() = prefs.getString("login_role", null)
         set(value) = prefs.edit { if (value == null) remove("login_role") else putString("login_role", value) }
 
+    /** "Remember my email" on the sign-in screen (on by default) and the email it keeps. */
+    var rememberEmail: Boolean
+        get() = prefs.getBoolean("remember_email", true)
+        set(value) = prefs.edit { putBoolean("remember_email", value); if (!value) remove("remembered_email") }
+
+    var rememberedEmail: String
+        get() = prefs.getString("remembered_email", "") ?: ""
+        set(value) = prefs.edit { putString("remembered_email", value) }
+
     /** The notification permission prompt is shown once, after the first class load. */
     var askedNotifications: Boolean
         get() = prefs.getBoolean("asked_notifications", false)

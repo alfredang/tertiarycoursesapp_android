@@ -128,12 +128,21 @@ class TokenStore(context: Context) {
         get() = prefs.getString(KEY_LEARNER, null)
         set(value) = prefs.edit { if (value == null) remove(KEY_LEARNER) else putString(KEY_LEARNER, value) }
 
+    /**
+     * Admin sign-in with Google: the verifier of the sign-in that is open in the browser.
+     * Kept here so it outlives the app being closed meanwhile; used once, then removed.
+     */
+    var googleVerifier: String?
+        get() = prefs.getString(KEY_GOOGLE_VERIFIER, null)
+        set(value) = prefs.edit { if (value == null) remove(KEY_GOOGLE_VERIFIER) else putString(KEY_GOOGLE_VERIFIER, value) }
+
     fun clear() = prefs.edit { clear() }
 
     private companion object {
         const val FILE = "session"
         const val KEY_TOKEN = "token"
         const val KEY_LEARNER = "learner"
+        const val KEY_GOOGLE_VERIFIER = "google_verifier"
 
         fun open(context: Context): SharedPreferences {
             fun create(): SharedPreferences {

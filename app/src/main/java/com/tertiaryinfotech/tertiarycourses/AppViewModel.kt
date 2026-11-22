@@ -26,6 +26,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.security.MessageDigest
+import java.security.SecureRandom
 
 /** A pushed screen inside a tab. */
 sealed interface Route {
@@ -254,6 +256,76 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             .put("platform", "android").put("app_version", appVersion))
         finishSignIn(reply, true)
     }
+
+    // "Remember my email" on the sign-in screen.
+    var rememberEmail: Boolean
+        get() = settings.rememberEmail
+        set(value) { settings.rememberEmail = value }
+    val rememberedEmail: String get() = settings.rememberedEmail
+    /** Called after a code is sent or a password sign-in succeeds. */
+    fun rememberSignInEmail(email: String) {
+        if (settings.rememberEmail) settings.rememberedEmail = email.trim()
+    }
+
+    // ── Admin sign-in with Google ──
+    //
+    // Through the website's own Google sign-in. The app sends the hash of a random
+    // verifier; the site answers at this app's URL scheme (tclms + site code) with a
+    // single-use code, which only this verifier can exchange for a session.
+
+    /** The sign-in card's error line (kept here so a Google sign-in that returns from the browser can fill it). */
+    var signInError by mutableStateOf<String?>(null)
+    /** Exchanging the code from Google sign-in for a session. */
+    var googleBusy by mutableStateOf(false); private set
+
+    /** Starts an admin sign-in: remembers a new verifier and returns the page to open in the browser. */
+    fun startGoogleSignIn(): String {
+        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val verifier = bytes.toHex()
+        val challenge = MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray(Charsets.UTF_8)).toHex()
+        tokens.googleVerifier = verifier
+        signInError = null
+        return Site.baseUrl + "mobileapi/auth/googlestart?challenge=" + challenge
+    }
+
+    /**
+     * The site's answer to [startGoogleSignIn]: `<scheme>://auth?code=<code>` or `?error=<message>`.
+     * Ignored unless a sign-in is pending; the verifier is used once.
+     */
+    fun onAuthCallback(uri: Uri?) {
+        if (uri == null || uri.scheme != AUTH_SCHEME || uri.host != "auth") return
+        val verifier = tokens.googleVerifier ?: return
+        tokens.googleVerifier = null
+        if (tokens.token != null) return
+        // Back on the sign-in screen, where the result shows.
+        guestTab = 0
+        stack("guest0").clear()
+        val message = uri.getQueryParameter("error")
+        val code = uri.getQueryParameter("code")
+        if (message != null || code.isNullOrEmpty()) {
+            signInError = message?.takeIf { it.isNotBlank() } ?: "Google sign-in did not complete. Please try again."
+            return
+        }
+        signInError = null
+        googleBusy = true
+        viewModelScope.launch {
+            try {
+                val reply = api.postAsync("auth/googleexchange", JSONObject()
+                    .put("code", code).put("verifier", verifier)
+                    .put("platform", "android").put("app_version", appVersion))
+                finishSignIn(reply, refresh = false)
+                // The owner account opens on its Admin view where that is available.
+                if ("admin" in availableRoles) switchRole("admin")
+                refreshAll()
+            } catch (e: Exception) {
+                signInError = e.message
+            } finally {
+                googleBusy = false
+            }
+        }
+    }
+
+    private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }
 
     private fun finishSignIn(reply: JSONObject, refresh: Boolean) {
         val token = reply.str("token")
@@ -647,6 +719,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     companion object {
         /** The only account that is offered the staff dashboards. */
         private const val OWNER_EMAIL = "angch@tertiaryinfotech.com"
+
+        /** URL scheme the site returns to after Google sign-in; AndroidManifest.xml registers the same one (authScheme). */
+        val AUTH_SCHEME = "tclms" + Site.code.lowercase()
 
         /** Staff roles, in the order they are offered. */
         val staffRoleNames = linkedMapOf(

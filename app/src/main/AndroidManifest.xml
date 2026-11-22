@@ -28,6 +28,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Admin sign-in with Google: the site returns to <authScheme>://auth?code=... .
+                 authScheme is "tclms" + the lower-case Site.code, set in app/build.gradle.kts. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${authScheme}" android:host="auth" />
+            </intent-filter>
         </activity>
 
         <!-- Shares a document downloaded in the viewer with other apps (save, print, send). -->
