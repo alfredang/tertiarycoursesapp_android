@@ -38,6 +38,22 @@ class Api(private val tokens: TokenStore, private val onSessionExpired: () -> Un
     suspend fun postAsync(path: String, body: JSONObject = JSONObject()) =
         withContext(Dispatchers.IO) { post(path, body) }
 
+    /** Raw bytes of an authenticated GET (the profile picture). */
+    suspend fun getBytes(path: String): ByteArray = withContext(Dispatchers.IO) {
+        val token = tokens.token
+        val request = Request.Builder().url(Site.apiUrl + path)
+            .header("User-Agent", userAgent)
+            .apply { if (token != null) header("Authorization", "Bearer $token") }
+            .build()
+        try {
+            client.newCall(request).execute().use { r ->
+                (if (r.isSuccessful) r.body?.bytes() else null) ?: throw ApiException("No picture.", r.code)
+            }
+        } catch (e: IOException) {
+            throw ApiException("Can't reach ${Site.siteName}. Check your connection and try again.")
+        }
+    }
+
     private fun send(path: String, method: String, query: Map<String, String>, body: JSONObject?): JSONObject {
         val url = (Site.apiUrl + path).toHttpUrl().newBuilder().apply {
             query.forEach { (k, v) -> addQueryParameter(k, v) }

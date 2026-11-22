@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,7 +39,6 @@ import androidx.compose.material.icons.filled.EditCalendar
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WorkspacePremium
@@ -62,7 +62,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -377,33 +376,17 @@ fun AccountScreen(vm: AppViewModel, push: (Route) -> Unit) {
     var confirmDelete by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    val learner = vm.learner
 
     ScreenScaffold { padding ->
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier.padding(padding).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            InfoCard(modifier = Modifier.clickable { push(Route.EditProfile) }.testTag("editProfile")) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(learner?.fullName?.ifBlank { null } ?: "Learner", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                            if (vm.isTrainer) StatusChip("Trainer", Theme.accent)
-                        }
-                        Spacer(Modifier.height(2.dp))
-                        Text(learner?.email.orEmpty(), fontSize = 15.sp, color = Theme.secondaryText)
-                        if (learner?.phone?.isNotEmpty() == true) Text(learner.phone, fontSize = 15.sp, color = Theme.secondaryText)
-                    }
-                    Text("Edit", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText)
-                }
-            }
+            // Picture, name, role, contact details and the editable profile (one page, no separate edit screen).
+            ProfileSections(vm)
 
             SectionLabel("Preferences", Modifier.padding(top = 10.dp, start = 4.dp))
             InfoCard(padding = 0.dp) {
-                MenuRow(Icons.Filled.Palette, "Appearance", value = themeLabel(vm.themePref)) { push(Route.EditProfile) }
-                MenuDivider()
                 RemindersRow(vm)
             }
 

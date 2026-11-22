@@ -36,6 +36,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("reminders", true)
         set(value) = prefs.edit { putBoolean("reminders", value) }
 
+    /** The role this device shows ("View as" on the Account page); empty = the account's first role. */
+    var viewRole: String
+        get() = prefs.getString("view_role", "") ?: ""
+        set(value) = prefs.edit { if (value.isEmpty()) remove("view_role") else putString("view_role", value) }
+
     /** The notification permission prompt is shown once, after the first class load. */
     var askedNotifications: Boolean
         get() = prefs.getBoolean("asked_notifications", false)

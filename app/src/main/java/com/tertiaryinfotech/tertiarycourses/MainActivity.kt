@@ -19,8 +19,11 @@ import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCard
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.CircularProgressIndicator
@@ -76,7 +79,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class TabSpec(val label: String, val icon: ImageVector)
+/** [id] names the tab's back stack; it stays the same when the set of tabs changes with the role. */
+private data class TabSpec(val id: Int, val label: String, val icon: ImageVector)
 
 /** Signed out: browse courses + sign in. Signed in: the learner's LMS. */
 @Composable
@@ -93,12 +97,12 @@ fun RootScreen(vm: AppViewModel) {
 @Composable
 private fun GuestTabs(vm: AppViewModel) {
     val tabs = listOf(
-        TabSpec("Sign In", Icons.AutoMirrored.Filled.Login),
-        TabSpec("Courses", Icons.AutoMirrored.Filled.LibraryBooks),
-        TabSpec("About", Icons.Filled.Info),
+        TabSpec(0, "Sign In", Icons.AutoMirrored.Filled.Login),
+        TabSpec(1, "Courses", Icons.AutoMirrored.Filled.LibraryBooks),
+        TabSpec(2, "About", Icons.Filled.Info),
     )
-    Tabs(vm, tabs, vm.guestTab, { vm.guestTab = it }, "guest") { index, push ->
-        when (index) {
+    Tabs(vm, tabs, vm.guestTab, { vm.guestTab = it }, "guest") { id, push ->
+        when (id) {
             0 -> SignInScreen(vm)
             1 -> CatalogScreen(vm, push = push)
             else -> AboutScreen()
@@ -108,19 +112,30 @@ private fun GuestTabs(vm: AppViewModel) {
 
 @Composable
 private fun LearnerTabs(vm: AppViewModel) {
-    val tabs = listOf(
-        TabSpec("My Classes", Icons.Filled.School),
-        TabSpec("Calendar", Icons.Filled.CalendarMonth),
-        TabSpec("Certificates", Icons.Filled.WorkspacePremium),
-        TabSpec("Billing", Icons.Filled.CreditCard),
-        TabSpec("Account", Icons.Filled.AccountCircle),
-    )
-    Tabs(vm, tabs, vm.learnerTab, { vm.learnerTab = it }, "learner") { index, push ->
-        when (index) {
-            0 -> ClassesScreen(vm, push)
-            1 -> CalendarScreen(vm, push)
-            2 -> CertificatesScreen(vm, push)
-            3 -> BillingScreen(vm)
+    val staff = vm.staffRole
+    val trainer = vm.isTrainer
+    // A trainer sees what they are paid and the hours they have taught; a learner sees
+    // certificates and billing. Staff: Dashboard, My Classes, Calendar, Account.
+    val tabs = buildList {
+        if (staff != null) add(TabSpec(AppViewModel.TAB_DASHBOARD, "Dashboard", Icons.Filled.Dashboard))
+        add(TabSpec(AppViewModel.TAB_CLASSES, "My Classes", Icons.Filled.School))
+        add(TabSpec(AppViewModel.TAB_CALENDAR, "Calendar", Icons.Filled.CalendarMonth))
+        if (staff == null && trainer) {
+            add(TabSpec(AppViewModel.TAB_THIRD, "Payout", Icons.Filled.Payments))
+            add(TabSpec(AppViewModel.TAB_FOURTH, "Hours", Icons.Filled.Schedule))
+        } else if (staff == null) {
+            add(TabSpec(AppViewModel.TAB_THIRD, "Certificates", Icons.Filled.WorkspacePremium))
+            add(TabSpec(AppViewModel.TAB_FOURTH, "Billing", Icons.Filled.CreditCard))
+        }
+        add(TabSpec(AppViewModel.TAB_ACCOUNT, "Account", Icons.Filled.AccountCircle))
+    }
+    Tabs(vm, tabs, vm.learnerTab, { vm.learnerTab = it }, "learner") { id, push ->
+        when (id) {
+            AppViewModel.TAB_DASHBOARD -> StaffDashboardScreen(vm, staff ?: vm.activeRole)
+            AppViewModel.TAB_CLASSES -> ClassesScreen(vm, push)
+            AppViewModel.TAB_CALENDAR -> CalendarScreen(vm, push)
+            AppViewModel.TAB_THIRD -> if (trainer) PayoutScreen(vm) else CertificatesScreen(vm, push)
+            AppViewModel.TAB_FOURTH -> if (trainer) TrainingHoursScreen(vm) else BillingScreen(vm)
             else -> AccountScreen(vm, push)
         }
     }
@@ -137,22 +152,24 @@ private fun Tabs(
     selected: Int,
     onSelect: (Int) -> Unit,
     prefix: String,
-    root: @Composable (index: Int, push: (Route) -> Unit) -> Unit,
+    root: @Composable (id: Int, push: (Route) -> Unit) -> Unit,
 ) {
     val holder = rememberSaveableStateHolder()
-    val key = "$prefix$selected"
+    // A tab that the current role does not have (after a role change) falls back to the first.
+    val current = (tabs.firstOrNull { it.id == selected } ?: tabs.first()).id
+    val key = "$prefix$current"
     val stack = vm.stack(key)
 
     Scaffold(
         containerColor = Theme.page,
         bottomBar = {
             NavigationBar(containerColor = Theme.card) {
-                tabs.forEachIndexed { index, spec ->
+                tabs.forEach { spec ->
                     NavigationBarItem(
-                        selected = selected == index,
+                        selected = current == spec.id,
                         onClick = {
                             // Re-tapping the current tab returns to its root.
-                            if (selected == index) vm.stack("$prefix$index").clear() else onSelect(index)
+                            if (current == spec.id) vm.stack("$prefix${spec.id}").clear() else onSelect(spec.id)
                         },
                         icon = { Icon(spec.icon, contentDescription = null) },
                         label = { Text(spec.label, fontSize = 11.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Visible) },
@@ -176,7 +193,7 @@ private fun Tabs(
             val pop: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
             val top = stack.lastOrNull()
             holder.SaveableStateProvider("$key/${stack.size}/${top?.hashCode() ?: 0}") {
-                if (top == null) root(selected, push) else RouteScreen(vm, top, push, pop)
+                if (top == null) root(current, push) else RouteScreen(vm, top, push, pop)
             }
         }
     }
@@ -190,7 +207,6 @@ private fun RouteScreen(vm: AppViewModel, route: Route, push: (Route) -> Unit, p
         is Route.Quiz -> QuizScreen(vm, route.runId, route.quizId, route.title, pop)
         is Route.TrainerClass -> TrainerClassScreen(vm, route.runId, route.title, push, pop)
         is Route.Document -> DocumentScreen(route.title, route.url, pop)
-        Route.EditProfile -> EditProfileScreen(vm, pop)
         is Route.CourseDetail -> CourseDetailScreen(route.course, pop)
         Route.Catalog -> CatalogScreen(vm, push = push, onBack = pop)
         Route.Feedback -> FeedbackScreen(onBack = pop)

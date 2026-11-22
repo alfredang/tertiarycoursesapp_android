@@ -50,7 +50,8 @@ fun JSONObject.strings(key: String): List<String> {
 
 /**
  * The signed-in account. `phone`, `theme` and `roles` arrive from 1.4 of the API; an older
- * backend omits them (learner only, appearance follows the device).
+ * backend omits them (learner only, appearance follows the device). `roles` may also hold
+ * the staff roles admin, marketing, developer and franchise_admin.
  */
 data class Learner(
     val email: String,
@@ -61,12 +62,19 @@ data class Learner(
     /** "system" | "light" | "dark" */
     val theme: String = "system",
     val roles: List<String> = listOf("learner"),
+    /** Unix time the profile picture was last set; null when there is none. */
+    val avatarVersion: Long? = null,
+    /** Trainers and staff only; empty when not set. */
+    val linkedinUrl: String = "",
 ) {
+    /** Trainer on the website, whatever view the app is showing (see AppViewModel.activeRole). */
     val isTrainer: Boolean get() = "trainer" in roles
 
     fun toJson(): String = JSONObject()
         .put("email", email).put("first_name", firstName).put("last_name", lastName).put("full_name", fullName)
         .put("phone", phone).put("theme", theme).put("roles", JSONArray(roles))
+        .put("linkedin_url", linkedinUrl)
+        .apply { if (avatarVersion != null) put("avatar_version", avatarVersion) }
         .toString()
 
     companion object {
@@ -74,6 +82,8 @@ data class Learner(
             j.str("email"), j.str("first_name"), j.str("last_name"), j.str("full_name"), j.str("phone"),
             j.str("theme").lowercase().takeIf { it == "light" || it == "dark" } ?: "system",
             j.strings("roles").map { it.lowercase() }.ifEmpty { listOf("learner") },
+            if (!j.has("avatar_version") || j.isNull("avatar_version")) null else j.optLong("avatar_version").takeIf { it > 0 },
+            j.str("linkedin_url"),
         )
     }
 }
@@ -243,6 +253,9 @@ data class TrainerClassDetail(
     val materials: List<Material>,
     val documents: List<Material>,
     val surveyResponses: Int,
+    /** Links the trainer shows the class; TRAQOM is set only for SSG-funded classes in Singapore. */
+    val feedbackUrl: String,
+    val traqomUrl: String,
 ) {
     companion object {
         fun from(j: JSONObject) = TrainerClassDetail(
@@ -251,6 +264,7 @@ data class TrainerClassDetail(
             j.str("trainer"), j.str("bucket"), j.list("sessions", ClassSession::from), j.str("current_session"),
             j.str("current_session_label"), j.bool("attendance_open"), j.str("checkin_url"), j.list("roster", RosterEntry::from),
             j.list("materials", Material::from), j.list("documents", Material::from), j.int("survey_responses"),
+            j.str("feedback_url"), j.str("traqom_url"),
         )
     }
 }
@@ -431,6 +445,115 @@ data class Order(
     }
 }
 
+// ── Trainer profile, payout and training hours ──
+
+/** A trainer's certification as edited on the Account page. */
+data class CertDraft(val name: String = "", val issuer: String = "", val year: String = "") {
+    companion object {
+        fun from(j: JSONObject) = CertDraft(j.str("name"), j.str("issuer"), j.int("year").takeIf { it > 0 }?.toString().orEmpty())
+    }
+}
+
+/** Trainer qualifications shown as badges under the name. */
+data class TrainerBadge(val code: String, val name: String, val issuer: String) {
+    fun matches(certName: String): Boolean {
+        val n = certName.lowercase()
+        return code.lowercase() in n || name.lowercase() in n
+    }
+
+    companion object {
+        val all = listOf(
+            TrainerBadge("ACLP", "WSQ Advanced Certificate in Learning and Performance (ACLP)", "Institute for Adult Learning"),
+            TrainerBadge("ACTA", "WSQ Advanced Certificate in Training and Assessment (ACTA)", "Institute for Adult Learning"),
+            TrainerBadge("DDDLP", "WSQ Diploma in Design and Development of Learning for Performance (DDDLP)", "Institute for Adult Learning"),
+            TrainerBadge("DACE", "WSQ Diploma in Adult and Continuing Education (DACE)", "Institute for Adult Learning"),
+        )
+    }
+}
+
+data class Payout(
+    val id: String,
+    val title: String,
+    val courseCode: String,
+    val learners: Int,
+    val amount: Double,
+    val paymentDate: String,
+    val startDate: String,
+    val endDate: String,
+) {
+    companion object {
+        fun from(j: JSONObject) = Payout(
+            j.str("id"), j.str("title"), j.str("course_code"), j.int("learners"), j.num("amount"),
+            j.str("payment_date"), j.str("start_date"), j.str("end_date"),
+        )
+    }
+}
+
+/** [available] is false when this site has no payout records to show (or they cannot be reached). */
+data class PayoutsReply(val available: Boolean, val payouts: List<Payout>, val total: Double, val currency: String) {
+    companion object {
+        fun from(j: JSONObject) = PayoutsReply(j.bool("available"), j.list("payouts", Payout::from), j.num("total"), j.str("currency"))
+    }
+}
+
+/** [month] is "2026-11". */
+data class HoursMonth(val month: String, val hours: Double) {
+    companion object {
+        fun from(j: JSONObject) = HoursMonth(j.str("month"), j.num("hours"))
+    }
+}
+
+data class HoursClass(
+    val runId: Int,
+    val title: String,
+    val sku: String,
+    val startDate: String,
+    val endDate: String,
+    val days: Int,
+    val hours: Double,
+) {
+    companion object {
+        fun from(j: JSONObject) = HoursClass(
+            j.int("run_id"), j.str("title"), j.str("sku"), j.str("start_date"), j.str("end_date"), j.int("days"), j.num("hours"),
+        )
+    }
+}
+
+data class TrainingHoursReply(val totalHours: Double, val months: List<HoursMonth>, val classes: List<HoursClass>) {
+    companion object {
+        fun from(j: JSONObject) = TrainingHoursReply(j.num("total_hours"), j.list("months", HoursMonth::from), j.list("classes", HoursClass::from))
+    }
+}
+
+// ── Staff dashboard (cards and lists decided by the server) ──
+
+/** [icon] is an SF Symbol name (the iOS app's icon set); [tone] is "normal" or "warning". */
+data class StaffCard(val title: String, val value: String, val icon: String, val tone: String) {
+    companion object {
+        fun from(j: JSONObject) = StaffCard(j.str("title"), j.str("value"), j.str("icon"), j.str("tone"))
+    }
+}
+
+data class StaffRow(val title: String, val subtitle: String, val value: String) {
+    companion object {
+        fun from(j: JSONObject) = StaffRow(j.str("title"), j.str("subtitle"), j.str("value"))
+    }
+}
+
+data class StaffList(val title: String, val rows: List<StaffRow>) {
+    companion object {
+        fun from(j: JSONObject) = StaffList(j.str("title"), j.list("rows", StaffRow::from))
+    }
+}
+
+data class StaffDashboard(val role: String, val title: String, val cards: List<StaffCard>, val lists: List<StaffList>, val updatedAt: String) {
+    companion object {
+        fun from(j: JSONObject) = StaffDashboard(
+            j.str("role"), j.str("title"), j.list("cards", StaffCard::from), j.list("lists", StaffList::from), j.str("updated_at"),
+        )
+    }
+}
+
 // ── Formatting ──
 
 object Fmt {
@@ -463,6 +586,13 @@ object Fmt {
 
     fun times(start: String, end: String): String =
         if (start.isEmpty()) "" else if (end.isEmpty()) time(start) else "${time(start)} – ${time(end)}"
+
+    /** "2026-11" → "November 2026" */
+    fun month(ym: String): String = date("$ym-01")?.format(monthYear) ?: ym
+
+    /** 16.0 → "16 h", 7.5 → "7.5 h" */
+    fun hours(h: Double): String =
+        (if (h == Math.rint(h)) h.toLong().toString() else String.format(en, "%.1f", h)) + " h"
 
     /** "<CUR> 350" / "<CUR> 1,234.50" (site currency code) */
     fun money(amount: Double, code: String): String {

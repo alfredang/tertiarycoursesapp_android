@@ -1,7 +1,11 @@
 package com.tertiaryinfotech.tertiarycourses
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -9,6 +13,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
@@ -16,7 +22,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /** A pushed screen inside a tab. */
@@ -28,7 +36,6 @@ sealed interface Route {
     data class TrainerClass(val runId: Int, val title: String) : Route
     /** A material, document or certificate shown inside the app. */
     data class Document(val title: String, val url: String) : Route
-    data object EditProfile : Route
     data object Catalog : Route
     data object Feedback : Route
     data object About : Route
@@ -48,7 +55,54 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var learnerClasses by mutableStateOf<ClassesReply?>(null)
     private var trainerClasses by mutableStateOf<ClassesReply?>(null)
     val classes: ClassesReply? get() = ClassesReply.merge(learnerClasses, trainerClasses)
-    val isTrainer get() = learner?.isTrainer == true
+
+    // ── Roles ──
+    //
+    // The app shows one role at a time. A trainer can look at the app as a learner
+    // (their own classes, certificates and billing). Staff dashboards are offered to
+    // the owner account only, and only for roles the website says it holds. The
+    // choice changes what this device shows, never what the server allows.
+
+    private var viewRole by mutableStateOf(settings.viewRole)
+
+    val availableRoles: List<String>
+        get() {
+            val l = learner ?: return emptyList()
+            val roles = if (l.isTrainer) mutableListOf("trainer", "learner") else mutableListOf("learner")
+            if (l.email.lowercase() == OWNER_EMAIL) {
+                // The franchise dashboard belongs to the Singapore site only.
+                roles += staffRoleNames.keys.filter { it in l.roles && (it != "franchise_admin" || Site.code == "SG") }
+            }
+            return roles
+        }
+    val canSwitchRole get() = availableRoles.size > 1
+    val activeRole: String get() = availableRoles.let { if (viewRole in it) viewRole else it.firstOrNull() ?: "learner" }
+    /** Showing the trainer view (teaching list, Payout and Hours tabs). */
+    val isTrainer get() = activeRole == "trainer"
+    /** The staff role being viewed, or null in the trainer and learner views. */
+    val staffRole: String? get() = activeRole.takeIf { it in staffRoleNames }
+
+    fun switchRole(role: String) {
+        if (role == activeRole) return
+        viewRole = role
+        settings.viewRole = role
+        if (!isTrainer) trainerClasses = null
+        // Screens pushed in the other role's tabs do not belong to this one.
+        stacks.forEach { (key, stack) -> if (key.startsWith("learner") && key != "learner$TAB_ACCOUNT") stack.clear() }
+        viewModelScope.launch { refreshClasses() }
+    }
+
+    /** The profile picture; null shows the initials. */
+    var avatar by mutableStateOf<ImageBitmap?>(null); private set
+    private var avatarLoadedVersion: Long? = null
+
+    /** Trainer certifications being edited on the Account page (kept here across tab switches). */
+    val certDrafts = mutableStateListOf<CertDraft>()
+    var certsLoaded by mutableStateOf(false); private set
+
+    var payouts by mutableStateOf<PayoutsReply?>(null); private set
+    var trainingHours by mutableStateOf<TrainingHoursReply?>(null); private set
+    var staffDashboard by mutableStateOf<StaffDashboard?>(null); private set
 
     /** Appearance: the account's saved theme while signed in, the device setting otherwise. */
     var themePref by mutableStateOf(settings.theme); private set
@@ -133,7 +187,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (signOut) clear()
         if (extras.containsKey("START_TAB")) {
             val t = extras.getInt("START_TAB", 0)
-            guestTab = t.coerceIn(0, 2); learnerTab = t.coerceIn(0, 4)
+            guestTab = t.coerceIn(0, 2); learnerTab = t.coerceIn(0, 5)
         }
         extras.getString("OPEN_BUCKET")?.let { b -> pendingBucket = Bucket.entries.firstOrNull { it.name.equals(b, true) } }
         if (extras.containsKey("OPEN_RUN_ID")) pendingRunId = extras.getInt("OPEN_RUN_ID").takeIf { it > 0 }
@@ -187,11 +241,60 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private var themeOverride: String? = null   // debug screenshots only
 
-    private fun rememberLearner(l: Learner) {
+    private fun rememberLearner(l: Learner, syncPicture: Boolean = true) {
         learner = l
         tokens.learnerJson = l.toJson()
         applyTheme(themeOverride ?: l.theme)
+        if (syncPicture) syncAvatar(l.avatarVersion)
     }
+
+    // ── Profile picture ──
+
+    /** Downloads the picture when the site has a newer one than this device shows. */
+    private fun syncAvatar(version: Long?) {
+        if (version == null) {
+            avatar = null; avatarLoadedVersion = null
+            return
+        }
+        if (version == avatarLoadedVersion) return
+        avatarLoadedVersion = version
+        viewModelScope.launch {
+            try {
+                val bytes = api.getBytes("profile/avatar")
+                val bitmap = withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
+                if (bitmap != null && avatarLoadedVersion == version) avatar = bitmap.asImageBitmap()
+            } catch (_: Exception) {
+                // No picture, or offline: the initials stay.
+            }
+        }
+    }
+
+    /** Shrinks the chosen photo to a 512px square JPEG, shows it at once and uploads it. */
+    suspend fun setAvatar(photo: Uri) {
+        val (square, jpeg) = withContext(Dispatchers.IO) {
+            val bitmap = squarePicture(getApplication(), photo) ?: throw ApiException("That picture could not be opened.")
+            val out = ByteArrayOutputStream()
+            if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out)) throw ApiException("That picture could not be used.")
+            bitmap to out.toByteArray()
+        }
+        val reply = api.postAsync("profile/avatar", JSONObject().put("image", Base64.encodeToString(jpeg, Base64.NO_WRAP)))
+        avatar = square.asImageBitmap()
+        reply.obj("learner")?.let { j ->
+            val l = Learner.from(j)
+            rememberLearner(l, syncPicture = false)
+            avatarLoadedVersion = l.avatarVersion
+        }
+    }
+
+    suspend fun removeAvatar() {
+        val reply = api.postAsync("profile/avatar", JSONObject().put("remove", 1))
+        avatar = null
+        avatarLoadedVersion = null
+        reply.obj("learner")?.let { rememberLearner(Learner.from(it), syncPicture = false) }
+    }
+
+    /** Shows the chosen appearance straight away; Save Changes stores it on the account. */
+    fun previewTheme(pref: String) = applyTheme(pref)
 
     private fun applyTheme(pref: String) {
         themePref = pref
@@ -199,15 +302,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Saves the profile (any of first name, last name, phone, theme) to the account. The theme
-     * is applied on this device straight away, even when the site can't be reached.
+     * Saves the profile (first name, last name, phone, theme, and the LinkedIn link when
+     * [linkedin] is not null) to the account. The theme is applied on this device straight
+     * away, even when the site can't be reached.
      */
-    suspend fun updateProfile(firstName: String, lastName: String, phone: String, theme: String): String {
+    suspend fun updateProfile(firstName: String, lastName: String, phone: String, linkedin: String?, theme: String): String {
         applyTheme(theme)
         val reply = try {
             api.postAsync("profile", JSONObject()
                 .put("first_name", firstName.trim()).put("last_name", lastName.trim())
-                .put("phone", phone.trim()).put("theme", theme))
+                .put("phone", phone.trim()).put("theme", theme)
+                .apply { if (linkedin != null) put("linkedin_url", linkedin.trim()) })
         } catch (e: ApiException) {
             // A site that hasn't been updated yet has no profile endpoint.
             if (e.status == 404) throw ApiException("Your appearance is saved on this device. Editing your name and phone isn't available on this site yet.", 404)
@@ -215,6 +320,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         reply.obj("learner")?.let { rememberLearner(Learner.from(it)) }
         return reply.str("message").ifEmpty { "Profile updated." }
+    }
+
+    // ── Trainer certifications ──
+
+    suspend fun loadCertifications() {
+        val list = api.getAsync("trainer/certifications").list("certifications", CertDraft::from)
+        certDrafts.clear()
+        certDrafts.addAll(list)
+        certsLoaded = true
+    }
+
+    /** Replaces the list on the site (the same list the web My Profile edits). */
+    suspend fun saveCertifications() {
+        val items = JSONArray()
+        certDrafts.forEach { items.put(JSONObject().put("name", it.name).put("issuer", it.issuer).put("year", it.year)) }
+        api.postAsync("trainer/certifications", JSONObject().put("items", items))
+    }
+
+    // ── Trainer payout and training hours, staff dashboard ──
+
+    suspend fun loadPayouts() {
+        payouts = PayoutsReply.from(api.getAsync("trainer/payouts"))
+    }
+
+    suspend fun loadTrainingHours() {
+        trainingHours = TrainingHoursReply.from(api.getAsync("trainer/hours"))
+    }
+
+    suspend fun loadStaffDashboard(role: String) {
+        if (staffDashboard?.role != role) staffDashboard = null
+        staffDashboard = StaffDashboard.from(api.getAsync("staff/dashboard", mapOf("role" to role)))
     }
 
     fun changeReminders(on: Boolean) {
@@ -257,6 +393,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         lastClassRefresh = 0
         themeOverride = null
         applyTheme("system")
+        avatar = null
+        avatarLoadedVersion = null
+        viewRole = ""
+        settings.viewRole = ""
+        certDrafts.clear()
+        certsLoaded = false
+        payouts = null
+        trainingHours = null
+        staffDashboard = null
         Reminders.schedule(getApplication(), emptyList())
         certificates = null
         orders = null
@@ -445,4 +590,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun parseCourses(text: String): List<Course> =
         JSONObject(text).optJSONArray("courses")?.objects()?.map(Course::from) ?: emptyList()
+
+    companion object {
+        /** The only account that is offered the staff dashboards. */
+        private const val OWNER_EMAIL = "angch@tertiaryinfotech.com"
+
+        /** Staff roles, in the order they are offered. */
+        val staffRoleNames = linkedMapOf(
+            "admin" to "Admin", "marketing" to "Marketing", "developer" to "Developer", "franchise_admin" to "Franchise Admin",
+        )
+
+        fun roleName(role: String): String = staffRoleNames[role] ?: if (role == "trainer") "Trainer" else "Learner"
+
+        // Signed-in tab ids (also the back-stack keys "learner<id>"); they stay the same in every role.
+        const val TAB_CLASSES = 0
+        const val TAB_CALENDAR = 1
+        /** Certificates for a learner, Payout for a trainer. */
+        const val TAB_THIRD = 2
+        /** Billing for a learner, Hours for a trainer. */
+        const val TAB_FOURTH = 3
+        const val TAB_ACCOUNT = 4
+        const val TAB_DASHBOARD = 5
+    }
 }
