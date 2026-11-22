@@ -60,6 +60,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -67,6 +70,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -81,7 +85,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -246,18 +252,38 @@ fun ProfileSections(vm: AppViewModel) {
         SectionLabel("Certifications", Modifier.padding(top = 10.dp, start = 4.dp))
         InfoCard {
             certs.forEachIndexed { i, c ->
-                Row(verticalAlignment = Alignment.Top) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ProfileField("Certification", c.name, KeyboardType.Text, "certName$i", max = 255) { certs[i] = c.copy(name = it) }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ProfileField("Issuer", c.issuer, KeyboardType.Text, "certIssuer$i", Modifier.weight(1f), max = 255) { certs[i] = c.copy(issuer = it) }
-                            ProfileField("Year", c.year, KeyboardType.Number, "certYear$i", Modifier.width(92.dp), max = 4) { v ->
-                                certs[i] = c.copy(year = v.filter { it.isDigit() })
+                // Swipe a certification to the left to delete it (as on iOS).
+                key(c.id) {
+                    val remove = { certs.removeAll { it.id == c.id } }
+                    val swipe = rememberSwipeToDismissBoxState(
+                        confirmValueChange = { v -> if (v == SwipeToDismissBoxValue.EndToStart) { remove(); true } else false },
+                    )
+                    SwipeToDismissBox(
+                        state = swipe,
+                        enableDismissFromStartToEnd = false,
+                        backgroundContent = {
+                            Row(
+                                Modifier.fillMaxSize().clip(RoundedCornerShape(10.dp)).background(Color(0xFFD32F2F)).padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End,
+                            ) {
+                                Icon(Icons.Filled.DeleteOutline, contentDescription = null, tint = Color.White)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Delete", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            }
+                        },
+                        modifier = Modifier.testTag("cert$i").semantics {
+                            customActions = listOf(CustomAccessibilityAction("Delete certification") { remove(); true })
+                        },
+                    ) {
+                        Column(Modifier.fillMaxWidth().background(Theme.card), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ProfileField("Certification", c.name, KeyboardType.Text, "certName$i", max = 255) { certs[i] = c.copy(name = it) }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ProfileField("Issuer", c.issuer, KeyboardType.Text, "certIssuer$i", Modifier.weight(1f), max = 255) { certs[i] = c.copy(issuer = it) }
+                                ProfileField("Year", c.year, KeyboardType.Number, "certYear$i", Modifier.width(92.dp), max = 4) { v ->
+                                    certs[i] = c.copy(year = v.filter { it.isDigit() })
+                                }
                             }
                         }
-                    }
-                    IconButton(onClick = { certs.removeAt(i) }) {
-                        Icon(Icons.Filled.DeleteOutline, contentDescription = "Delete certification", tint = Theme.danger)
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Theme.cardBorder)
@@ -302,19 +328,15 @@ fun ProfileSections(vm: AppViewModel) {
                     shape = SegmentedButtonDefaults.itemShape(i, themes.size),
                     icon = {},
                     colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = Theme.brand, activeContentColor = Color.White, activeBorderColor = Theme.brand,
+                        activeContainerColor = Theme.card, activeContentColor = Theme.accent, activeBorderColor = Theme.cardBorder,
                         inactiveContainerColor = Theme.field, inactiveContentColor = Theme.ink, inactiveBorderColor = Theme.cardBorder,
                     ),
                     modifier = Modifier.testTag("theme-$key"),
                 ) { Text(label, fontSize = 14.sp, fontWeight = if (theme == key) FontWeight.SemiBold else FontWeight.Normal) }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "System follows your phone's light or dark setting. Your choice is saved to your account.",
-            fontSize = 12.sp, color = Theme.secondaryText,
-        )
     }
+    Footnote("System follows your phone's light or dark setting. Your choice is saved to your account.")
 
     Spacer(Modifier.height(6.dp))
     PrimaryButton("Save Changes", enabled = first.isNotBlank(), busy = saving, modifier = Modifier.testTag("saveProfile")) {
@@ -354,7 +376,7 @@ fun ProfileSections(vm: AppViewModel) {
 }
 
 @Composable
-private fun Footnote(text: String) {
+fun Footnote(text: String) {
     Text(text, fontSize = 12.sp, color = Theme.secondaryText, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
@@ -492,15 +514,12 @@ fun RemindersRow(vm: AppViewModel) {
                 modifier = Modifier.testTag("remindersSwitch"),
             )
         }
-        Text(
-            "Reminds you 3 days before a class, the evening before each class day, and an hour before it starts.",
-            fontSize = 12.sp, color = Theme.secondaryText, modifier = Modifier.padding(start = 52.dp, end = 16.dp, bottom = 12.dp),
-        )
         if (vm.remindersOn && !allowed) {
-            Column(Modifier.padding(start = 52.dp, end = 16.dp, bottom = 12.dp)) {
-                Text("Notifications are turned off for ${Site.appName}, so reminders can't be shown.", fontSize = 13.sp, color = Theme.warning)
+            MenuDivider()
+            Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 4.dp)) {
+                Text("Notifications are turned off for ${Site.appName} in Settings, so reminders can't be shown.", fontSize = 13.sp, color = Theme.secondaryText)
                 TextButton(onClick = { Reminders.openSystemSettings(context) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                    Text("Open notification settings", color = Theme.accent, fontWeight = FontWeight.SemiBold)
+                    Text("Open Settings", fontSize = 13.sp, color = Theme.accent, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

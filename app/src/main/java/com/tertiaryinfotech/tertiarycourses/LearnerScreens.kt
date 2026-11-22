@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -115,7 +114,7 @@ fun CalendarScreen(vm: AppViewModel, push: (Route) -> Unit) {
                             Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous month", tint = Theme.accent)
                         }
                         Text(
-                            month.atDay(1).format(Fmt.monthYear), fontSize = 18.sp, fontWeight = FontWeight.SemiBold,
+                            month.atDay(1).format(Fmt.monthYear), fontSize = 17.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                         IconButton(onClick = { monthKey = month.plusMonths(1).toString() }) {
@@ -291,9 +290,9 @@ fun CertificatesScreen(vm: AppViewModel, push: (Route) -> Unit) {
                             if (cert.url.isNotEmpty()) {
                                 Spacer(Modifier.height(12.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    PrimaryButton("View PDF", Icons.Filled.Description, modifier = Modifier.weight(1f)) { push(Route.Document(cert.title, cert.url)) }
+                                    PrimaryButton("View PDF", Icons.Filled.Description, modifier = Modifier.weight(1f)) { openDocument(context, push, cert.title, cert.url) }
                                     OutlineButton("Share", Icons.Filled.Share, modifier = Modifier.weight(1f)) {
-                                        shareText(context, "${cert.title} — ${cert.name}\n${cert.url}", cert.title)
+                                        shareText(context, cert.url, cert.title)
                                     }
                                 }
                             }
@@ -385,10 +384,11 @@ fun AccountScreen(vm: AppViewModel, push: (Route) -> Unit) {
             // Picture, name, role, contact details and the editable profile (one page, no separate edit screen).
             ProfileSections(vm)
 
-            SectionLabel("Preferences", Modifier.padding(top = 10.dp, start = 4.dp))
+            Spacer(Modifier.height(10.dp))
             InfoCard(padding = 0.dp) {
                 RemindersRow(vm)
             }
+            Footnote("Reminds you 3 days before a class starts, the evening before each class day, and an hour before it begins.")
 
             SectionLabel("Explore", Modifier.padding(top = 10.dp, start = 4.dp))
             InfoCard(padding = 0.dp) {
@@ -408,7 +408,10 @@ fun AccountScreen(vm: AppViewModel, push: (Route) -> Unit) {
 
             Spacer(Modifier.height(10.dp))
             InfoCard(padding = 0.dp) {
-                MenuRow(Icons.AutoMirrored.Filled.Logout, "Sign Out", tint = Theme.accent, chevron = false) { confirmSignOut = true }
+                Text(
+                    "Sign Out", fontSize = 16.sp, color = Theme.accent,
+                    modifier = Modifier.fillMaxWidth().clickable { confirmSignOut = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+                )
             }
 
             Spacer(Modifier.height(10.dp))
@@ -428,7 +431,7 @@ fun AccountScreen(vm: AppViewModel, push: (Route) -> Unit) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
             title = { Text("Sign out of ${Site.appName}?") },
-            confirmButton = { TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("Sign Out") } },
+            confirmButton = { TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("Sign Out", color = Theme.danger) } },
             dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Cancel") } },
         )
     }

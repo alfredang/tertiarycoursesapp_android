@@ -77,7 +77,8 @@ object Reminders {
     private const val STORE = "reminders"
     private const val MAX = 60
 
-    fun build(classes: List<ClassItem>, now: Long = System.currentTimeMillis()): List<Reminder> {
+    /** [showRole]: the trainer view, where a reminder says whether the class is taught or attended. */
+    fun build(classes: List<ClassItem>, showRole: Boolean = false, now: Long = System.currentTimeMillis()): List<Reminder> {
         val zone = try { ZoneId.of(Site.timeZone) } catch (e: Exception) { ZoneId.systemDefault() }
         fun millis(d: LocalDate, t: LocalTime) = d.atTime(t).atZone(zone).toInstant().toEpochMilli()
         val out = ArrayList<Reminder>()
@@ -85,25 +86,25 @@ object Reminders {
             if (c.runId <= 0 || c.isPendingPayment || c.bucket == "past") continue
             val days = c.classDays.ifEmpty { listOf(c.startDate) }.mapNotNull { Fmt.date(it) }.distinct().sorted()
             val first = days.firstOrNull() ?: continue
-            val verb = if (c.isTeaching) "Teaching" else "Attending"
+            val verb = if (showRole) (if (c.isTeaching) "Teaching" else "Attending") else "Class"
             val start = c.startTime.split(":").mapNotNull { it.toIntOrNull() }
                 .takeIf { it.size >= 2 }?.let { LocalTime.of(it[0].coerceIn(0, 23), it[1].coerceIn(0, 59)) }
             val time = Fmt.times(c.startTime, c.endTime)
             val place = when {
-                c.mode == "Live Online" || (c.venue.isEmpty() && c.virtualLink.isNotEmpty()) -> "Live online"
+                c.mode == "Live Online" -> "Live online"
                 else -> listOf(c.room, c.venue).filter { it.isNotEmpty() }.joinToString(", ")
             }
             val details = listOf(time, place).filter { it.isNotEmpty() }.joinToString(" · ")
-            fun add(kind: String, day: LocalDate, at: Long, title: String, whenText: String) {
+            // "Class tomorrow: <title>" with the time and place below, the same wording as iOS.
+            fun add(kind: String, day: LocalDate, at: Long, lead: String) {
                 if (at <= now) return
-                val text = listOf("$verb: ${c.title}", "$whenText${if (details.isNotEmpty()) " · $details" else ""}").joinToString("\n")
-                out += Reminder("${c.role}-${c.runId}-$kind-$day".hashCode(), at, title, text)
+                out += Reminder("${c.role}-${c.runId}-$kind-$day".hashCode(), at, "$verb $lead: ${c.title}", details.ifEmpty { Site.siteName })
             }
-            add("3d", first, millis(first.minusDays(3), LocalTime.of(9, 0)), "Class in 3 days", Fmt.longDate(first.toString()))
+            add("3d", first, millis(first.minusDays(3), LocalTime.of(9, 0)), "in 3 days")
             days.forEach { d ->
-                add("eve", d, millis(d.minusDays(1), LocalTime.of(18, 0)), "Class tomorrow", Fmt.longDate(d.toString()))
-                val at = if (start != null) d.atTime(start).minusHours(1).atZone(zone).toInstant().toEpochMilli() else millis(d, LocalTime.of(8, 0))
-                add("day", d, at, "Class today", "Today")
+                add("eve", d, millis(d.minusDays(1), LocalTime.of(18, 0)), "tomorrow")
+                if (start != null && start.hour >= 1) add("day", d, millis(d, start.minusHours(1)), "in 1 hour")
+                else add("day", d, millis(d, LocalTime.of(8, 0)), "today")
             }
         }
         return out.sortedBy { it.at }.take(MAX)

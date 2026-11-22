@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -48,12 +50,22 @@ import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.RateReview
-import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Switch
@@ -84,7 +96,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.sp
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -102,12 +117,18 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     var detail by remember { mutableStateOf<TrainerClassDetail?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var session by remember { mutableStateOf("") }
-    // Unsaved toggles: "sessionKey|email" -> present.
-    val edits = remember { mutableStateMapOf<String, Boolean>() }
+    // Emails marked present for the chosen session, as edited on screen.
+    var present by remember { mutableStateOf(setOf<String>()) }
+    var dirty by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var showQr by remember { mutableStateOf(false) }
     var surveyQr by remember { mutableStateOf<SurveyLink?>(null) }
+
+    fun resetMarks(d: TrainerClassDetail, key: String) {
+        present = d.roster.filter { key in it.present }.map { it.email }.toSet()
+        dirty = false
+    }
 
     suspend fun load() {
         try {
@@ -116,6 +137,7 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
             if (session.isEmpty() || d.sessions.none { it.key == session }) {
                 session = d.currentSession.ifEmpty { d.sessions.firstOrNull()?.key.orEmpty() }
             }
+            resetMarks(d, session)
         } catch (e: Exception) {
             error = e.message
         }
@@ -123,7 +145,7 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     LaunchedEffect(runId) { load() }
 
     ScreenScaffold(title = title, onBack = onBack) { padding ->
-        Refreshable({ edits.clear(); load() }, Modifier.padding(padding)) {
+        Refreshable({ load() }, Modifier.padding(padding)) {
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -133,19 +155,18 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                     d != null -> {
                         TrainerOverview(d) { openUrl(context, d.virtualLink) }
                         TakeAttendanceCard(
-                            d, session, edits, saving,
-                            onSession = { session = it },
+                            d, session, present, dirty, saving,
+                            onSession = { session = it; resetMarks(d, it) },
+                            onToggle = { email, on -> present = if (on) present + email else present - email; dirty = true },
+                            onMarkAll = { present = d.roster.map { it.email }.toSet(); dirty = true },
                             onQr = { showQr = true },
                             onSave = {
                                 scope.launch {
                                     saving = true
                                     try {
-                                        val records = d.roster.map { r ->
-                                            Triple(r.email, r.name, edits["$session|${r.email}"] ?: (session in r.present))
-                                        }
+                                        val records = d.roster.map { r -> Triple(r.email, r.name, r.email in present) }
                                         notice = vm.saveAttendance(runId, session, records)
                                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        edits.keys.filter { it.startsWith("$session|") }.forEach { edits.remove(it) }
                                         load()
                                     } catch (e: Exception) {
                                         notice = e.message
@@ -155,26 +176,27 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                                 }
                             },
                         )
-                        MaterialsList("Courseware", (d.materials + d.documents).filter { it.url.isNotEmpty() },
-                            "The courseware for this class will appear here.") { push(Route.Document(it.title, it.url)) }
+                        MaterialsList("Class materials", (d.materials + d.documents).filter { it.url.isNotEmpty() },
+                            "No materials are linked to this course yet.") { openDocument(context, push, it.title, it.url) }
                         InfoCard {
                             SectionLabel("Course feedback")
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(8.dp))
+                            val n = d.surveyResponses
+                            val total = d.roster.size
                             IconLine(
                                 Icons.Filled.RateReview,
-                                when (d.surveyResponses) {
-                                    0 -> "No feedback responses yet."
-                                    1 -> "1 learner has given feedback."
-                                    else -> "${d.surveyResponses} learners have given feedback."
-                                },
-                                fontSize = 15, iconTint = Theme.accent,
+                                if (n == 0) "No feedback submitted yet" else "$n of $total learner${if (total == 1) "" else "s"} gave feedback",
+                                color = if (n == 0) Theme.secondaryText else Theme.ink,
+                                fontSize = 15, iconTint = if (n == 0) Theme.secondaryText else Theme.ink,
                             )
                             if (d.feedbackUrl.isNotEmpty()) {
-                                Spacer(Modifier.height(10.dp))
+                                Spacer(Modifier.height(8.dp))
                                 TonalButton("Show Course Survey QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("showSurveyQR")) {
                                     surveyQr = SurveyLink("Course Survey", d.feedbackUrl, "Learners scan this to give their course feedback.")
                                 }
                             }
+                            Spacer(Modifier.height(8.dp))
+                            Text("Learners give feedback in this app from the first day of class.", fontSize = 12.sp, color = Theme.secondaryText)
                         }
                     }
                     error != null -> ErrorCard(error!!) { scope.launch { load() } }
@@ -194,43 +216,74 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     }
     val d = detail
     if (showQr && d != null && d.checkinUrl.isNotEmpty()) {
-        QrDialog(
-            "Check-in QR", d.checkinUrl,
-            "Learners scan this code to check in" + (if (d.currentSessionLabel.isNotEmpty()) " for ${d.currentSessionLabel}." else "."),
-            tag = "checkinQr",
+        QrSheet(
+            heading = "Check-in QR", link = d.checkinUrl, title = d.title, sessionLabel = d.currentSessionLabel,
+            hint = "Learners scan this with their phone camera to check in to this session.",
+            shareLabel = "Share Check-in Link", tag = "checkinQr",
         ) { showQr = false }
     }
     surveyQr?.let { s ->
-        QrDialog(s.title, s.url, s.hint, tag = "surveyQr", shareLabel = "Share Link") { surveyQr = null }
+        QrSheet(
+            heading = s.title, link = s.url, title = d?.title.orEmpty(), sessionLabel = "",
+            hint = s.hint, shareLabel = "Share Link", tag = "surveyQr",
+        ) { surveyQr = null }
     }
 }
 
 /** A survey the trainer shows the class as a QR code. */
 private data class SurveyLink(val title: String, val url: String, val hint: String)
 
-/** The QR sheet for the check-in link and the survey links; [shareLabel] adds a button that shares the link. */
+/**
+ * The check-in link or a survey link as a QR code for learners to scan: a full-screen
+ * sheet with the class title, the session, the code, a hint and a button that shares the link.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun QrDialog(heading: String, link: String, hint: String, tag: String, shareLabel: String? = null, onDismiss: () -> Unit) {
+private fun QrSheet(
+    heading: String, link: String, title: String, sessionLabel: String, hint: String, shareLabel: String, tag: String,
+    onDismiss: () -> Unit,
+) {
     val context = LocalContext.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = shareLabel?.let { label -> { TextButton(onClick = { shareText(context, link, heading) }) { Text(label) } } },
-        title = { Text(heading) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                QrCode(link, Modifier.fillMaxWidth().testTag(tag), description = "$heading code")
-                Spacer(Modifier.height(12.dp))
-                Text(hint, fontSize = 14.sp, color = Theme.secondaryText, textAlign = TextAlign.Center)
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Scaffold(
+            containerColor = Theme.page,
+            topBar = {
+                CenterAlignedTopAppBar(
+                    title = { Text(heading, maxLines = 1, fontWeight = FontWeight.SemiBold, fontSize = 18.sp) },
+                    actions = {
+                        TextButton(onClick = onDismiss) { Text("Done", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent) }
+                    },
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Theme.page),
+                )
+            },
+        ) { padding ->
+            Column(
+                Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, color = Theme.ink)
+                if (sessionLabel.isNotEmpty()) Text(sessionLabel, fontSize = 15.sp, color = Theme.secondaryText, textAlign = TextAlign.Center)
+                QrCode(link, Modifier.widthIn(max = 320.dp).fillMaxWidth().testTag(tag), description = "$heading code")
+                Text(hint, fontSize = 13.sp, color = Theme.secondaryText, textAlign = TextAlign.Center)
+                FilledTonalButton(
+                    onClick = { shareText(context, link, heading) },
+                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Theme.tonal, contentColor = Theme.accent),
+                    modifier = Modifier.testTag("shareQrLink"),
+                ) {
+                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(shareLabel, fontSize = 16.sp)
+                }
             }
-        },
-    )
+        }
+    }
 }
 
 @Composable
 private fun TrainerOverview(d: TrainerClassDetail, join: () -> Unit) {
     InfoCard {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             StatusChip("Teaching", Theme.accent)
             if (d.bucket == "current") StatusChip("In progress", Theme.success)
         }
@@ -245,12 +298,11 @@ private fun TrainerOverview(d: TrainerClassDetail, join: () -> Unit) {
             if (d.mode.isNotEmpty()) IconLine(modeIcon(d.mode), d.mode, fontSize = 15, iconTint = Theme.ink)
             val place = listOf(d.room, d.venue).filter { it.isNotEmpty() }
             if (place.isNotEmpty()) IconLine(Icons.Filled.Place, place.joinToString("\n"), fontSize = 15, iconTint = Theme.ink)
-            if (d.trainer.isNotEmpty()) IconLine(Icons.Filled.Person, "Trainer: ${d.trainer}", fontSize = 15, iconTint = Theme.ink)
-            IconLine(Icons.Filled.Groups, if (d.roster.size == 1) "1 learner" else "${d.roster.size} learners", fontSize = 15, iconTint = Theme.ink)
+            IconLine(Icons.Filled.Groups, "${d.roster.size} learner${if (d.roster.size == 1) "" else "s"}", fontSize = 15, iconTint = Theme.ink)
         }
         if (d.virtualLink.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
-            PrimaryButton("Start Online Class", Icons.Filled.Videocam, onClick = join)
+            PrimaryButton("Join Online Class", Icons.Filled.Videocam, onClick = join)
         }
     }
 }
@@ -259,90 +311,111 @@ private fun TrainerOverview(d: TrainerClassDetail, join: () -> Unit) {
 private fun TakeAttendanceCard(
     d: TrainerClassDetail,
     session: String,
-    edits: SnapshotStateMap<String, Boolean>,
+    present: Set<String>,
+    dirty: Boolean,
     saving: Boolean,
     onSession: (String) -> Unit,
+    onToggle: (String, Boolean) -> Unit,
+    onMarkAll: () -> Unit,
     onQr: () -> Unit,
     onSave: () -> Unit,
 ) {
-    fun present(r: RosterEntry) = edits["$session|${r.email}"] ?: (session in r.present)
-    val setEdit: (RosterEntry, Boolean) -> Unit = { r, v ->
-        // Toggling back to the saved value is no longer an unsaved change.
-        if (v == (session in r.present)) edits.remove("$session|${r.email}") else edits["$session|${r.email}"] = v
-    }
-    val count = d.roster.count { present(it) }
-    val dirty = edits.keys.any { it.startsWith("$session|") }
+    val open = d.attendanceOpen
+    fun label(s: ClassSession) = s.label + if (s.key == d.currentSession) " (now)" else ""
 
     InfoCard {
-        SectionLabel("Take attendance")
-        Spacer(Modifier.height(10.dp))
-        if (d.sessions.isNotEmpty()) {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                d.sessions.forEach { s ->
-                    FilterChip(
-                        selected = s.key == session,
-                        onClick = { onSession(s.key) },
-                        label = { Text(sessionShort(s), fontSize = 13.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Theme.brand, selectedLabelColor = Color.White, labelColor = Theme.ink,
-                        ),
-                    )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel("Take attendance", Modifier.weight(1f))
+            if (d.roster.isNotEmpty()) {
+                Text(
+                    "${present.size} of ${d.roster.size} present", fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                    color = Theme.success, modifier = Modifier.testTag("presentCount"),
+                )
+            }
+        }
+        if (d.sessions.size > 1) {
+            // The session menu: the chosen session, tap to pick another.
+            var menu by remember { mutableStateOf(false) }
+            Spacer(Modifier.height(6.dp))
+            Box {
+                Row(
+                    Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Choose session") { menu = true }
+                        .padding(vertical = 8.dp).testTag("sessionPicker"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(d.sessions.firstOrNull { it.key == session }?.let { label(it) }.orEmpty(), fontSize = 16.sp, color = Theme.accent)
+                    Icon(Icons.Filled.UnfoldMore, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(18.dp))
+                }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }, containerColor = Theme.card) {
+                    d.sessions.forEach { s ->
+                        DropdownMenuItem(
+                            text = { Text(label(s)) },
+                            trailingIcon = { if (s.key == session) Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Theme.accent) },
+                            onClick = { menu = false; if (s.key != session) onSession(s.key) },
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            Text(d.sessions.firstOrNull { it.key == session }?.label.orEmpty(), fontSize = 13.sp, color = Theme.secondaryText)
+        } else d.sessions.firstOrNull()?.let { only ->
+            Spacer(Modifier.height(12.dp))
+            Text(only.label, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
         }
-        Spacer(Modifier.height(8.dp))
-        Text("$count of ${d.roster.size} present", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("presentCount"))
-        if (!d.attendanceOpen) {
-            Spacer(Modifier.height(4.dp))
+
+        if (!open) {
+            Spacer(Modifier.height(12.dp))
             Text(
-                if (d.bucket == "upcoming") "Attendance opens on the first day of class." else "Attendance is closed for this class. Corrections are made on ${Site.websiteLabel}.",
+                if (d.bucket == "upcoming") "Attendance opens on the first day of class."
+                else "Attendance is closed for this class. Use ${Site.websiteLabel} to correct a finished class.",
                 fontSize = 13.sp, color = Theme.secondaryText,
             )
         }
+
+        Spacer(Modifier.height(12.dp))
         if (d.roster.isEmpty()) {
-            Spacer(Modifier.height(8.dp))
             Text("No learners are on this class roster yet.", fontSize = 15.sp, color = Theme.secondaryText)
-        } else {
-            HorizontalDivider(Modifier.padding(top = 12.dp), color = Theme.cardBorder)
         }
         d.roster.forEachIndexed { i, r ->
-            val on = present(r)
+            val on = r.email in present
             Row(
-                Modifier.fillMaxWidth()
-                    .then(if (d.attendanceOpen) Modifier.clickable { setEdit(r, !on) } else Modifier)
-                    .padding(vertical = 8.dp)
-                    .semantics(mergeDescendants = true) { contentDescription = "${r.name}, ${if (on) "present" else "absent"}" },
+                Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    .semantics(mergeDescendants = true) { contentDescription = "${r.name.ifEmpty { r.email }}, ${if (on) "present" else "absent"}" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
-                    Text(r.name.ifEmpty { r.email }, fontSize = 16.sp, color = Theme.ink)
-                    val sub = listOf(r.email.takeIf { r.name.isNotEmpty() }.orEmpty(), if (r.walkin) "Walk-in" else "").filter { it.isNotEmpty() }
-                    if (sub.isNotEmpty()) Text(sub.joinToString(" · "), fontSize = 12.sp, color = Theme.secondaryText)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(r.name.ifEmpty { r.email }, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Theme.ink)
+                    Text(
+                        r.email + if (r.walkin) " · walk-in" else "", fontSize = 12.sp, color = Theme.secondaryText,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
                 Switch(
-                    checked = on, onCheckedChange = { setEdit(r, it) }, enabled = d.attendanceOpen,
+                    checked = on, onCheckedChange = { onToggle(r.email, it) }, enabled = open && !saving,
                     colors = SwitchDefaults.colors(checkedTrackColor = Theme.success, checkedThumbColor = Color.White),
                 )
             }
             if (i < d.roster.lastIndex) HorizontalDivider(color = Theme.cardBorder)
         }
-        if (d.attendanceOpen && d.roster.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            PrimaryButton("Save Attendance", Icons.Filled.Save, enabled = dirty, busy = saving, modifier = Modifier.testTag("saveAttendance"), onClick = onSave)
-        }
-        if (d.checkinUrl.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            TonalButton("Show Check-in QR", Icons.Filled.QrCode2, onClick = onQr)
+
+        if (open) {
+            if (d.roster.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(onClick = onMarkAll, contentPadding = PaddingValues(0.dp), modifier = Modifier.testTag("markAllPresent")) {
+                    Text("Mark all present", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                }
+                Spacer(Modifier.height(4.dp))
+                PrimaryButton(
+                    "Save Attendance", Icons.Filled.CheckCircle, enabled = dirty && session.isNotEmpty(), busy = saving,
+                    modifier = Modifier.testTag("saveAttendance"), onClick = onSave,
+                )
+            }
+            if (d.checkinUrl.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                TonalButton("Show Check-in QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("showQR"), onClick = onQr)
+            }
         }
     }
 }
-
-/** "Day 1 AM" for the session chips. */
-private fun sessionShort(s: ClassSession): String =
-    if (s.day > 0 && s.part.isNotEmpty()) "Day ${s.day} ${s.part}" else s.label.ifEmpty { s.key }
 
 /** A titled list of documents that open in the in-app viewer (shared with the learner class screen). */
 @Composable
@@ -361,7 +434,7 @@ fun MaterialsList(label: String, all: List<Material>, empty: String, open: (Mate
                 Icon(materialIcon(m), contentDescription = null, tint = Theme.ink, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(12.dp))
                 Text(m.title, fontSize = 16.sp, color = Theme.ink, modifier = Modifier.weight(1f))
-                Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = "Open", tint = Theme.tertiaryText, modifier = Modifier.size(20.dp))
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText, modifier = Modifier.size(20.dp))
             }
             if (i < all.lastIndex) HorizontalDivider(color = Theme.cardBorder)
         }
@@ -378,7 +451,7 @@ fun QrCode(text: String, modifier: Modifier = Modifier, description: String = "C
             null
         }
     }
-    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp)).background(Color.White).semantics { contentDescription = description }) {
+    Box(modifier.aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(Color.White).semantics { contentDescription = description }) {
         if (matrix != null) {
             Canvas(Modifier.fillMaxSize()) {
                 val cell = size.width / matrix.width
@@ -395,14 +468,19 @@ fun QrCode(text: String, modifier: Modifier = Modifier, description: String = "C
 /** Loads a tab's data once (it is kept in the view model), with pull-to-refresh and a retry card. */
 @Composable
 private fun <T> LoadedTab(
-    data: T?, key: Any, load: suspend () -> Unit, header: @Composable () -> Unit = {}, content: @Composable (T) -> Unit,
+    data: T?, key: Any, load: suspend () -> Unit, header: @Composable () -> Unit = {},
+    /** Set for a tab that reloads every time it is shown: drops what is on screen before the load. */
+    resetOnShow: (() -> Unit)? = null,
+    content: @Composable (T) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var error by remember(key) { mutableStateOf<String?>(null) }
     suspend fun run() {
         try { load(); error = null } catch (e: Exception) { error = e.message ?: "Something went wrong. Please try again." }
     }
-    LaunchedEffect(key) { if (data == null) run() }
+    LaunchedEffect(key) {
+        if (resetOnShow != null) { resetOnShow(); run() } else if (data == null) run()
+    }
 
     ScreenScaffold { padding ->
         Refreshable({ run() }, Modifier.padding(padding)) {
@@ -518,7 +596,7 @@ fun TrainingHoursScreen(vm: AppViewModel) {
 /** One glanceable screen per staff role; the cards and lists are whatever the site sends. */
 @Composable
 fun StaffDashboardScreen(vm: AppViewModel, role: String) {
-    LoadedTab(vm.staffDashboard?.takeIf { it.role == role }, role, { vm.loadStaffDashboard(role) }, header = { HomeHeader(vm) }) { data ->
+    LoadedTab(vm.staffDashboard?.takeIf { it.role == role }, role, { vm.loadStaffDashboard(role) }, header = { HomeHeader(vm) }, resetOnShow = { vm.clearStaffDashboard() }) { data ->
         data.cards.chunked(2).forEach { pair ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 pair.forEach { StaffCardView(it, Modifier.weight(1f).fillMaxHeight()) }

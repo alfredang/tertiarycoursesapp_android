@@ -135,15 +135,11 @@ fun AboutScreen(onBack: (() -> Unit)? = null) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             InfoCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BrandBadge(44.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Text(Site.appName, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                }
-                Spacer(Modifier.height(10.dp))
+                Text(Site.appName, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    "The app for learners and trainers of ${Site.siteName}. Sign in with your email code or password to see your current, upcoming and past classes, your class calendar and materials, check in to class, give course feedback, and download your certificates and billing records. Trainers see the classes they teach, take attendance and open the courseware. Class reminders are sent to your phone. You can also browse our courses.",
-                    fontSize = 15.sp, color = Theme.secondaryText, lineHeight = 21.sp,
+                    "The app for learners and trainers of ${Site.siteName}. Sign in with your email code or password to see your current, upcoming and past classes, your class calendar and materials, and get reminders before each class. Learners check in to class, give course feedback, and download their certificates and billing records. Trainers take attendance and open the class materials. You can also browse our courses.",
+                    fontSize = 16.sp, color = Theme.secondaryText, lineHeight = 21.sp,
                 )
             }
 

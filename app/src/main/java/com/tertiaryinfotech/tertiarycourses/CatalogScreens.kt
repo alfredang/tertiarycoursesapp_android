@@ -108,7 +108,8 @@ fun CatalogScreen(vm: AppViewModel, push: (Route) -> Unit, onBack: (() -> Unit)?
     val grouped = filtered.groupBy { it.category }
     val sections = categories.mapNotNull { name -> grouped[name]?.takeIf { it.isNotEmpty() }?.let { name to it } }
 
-    ScreenScaffold(title = if (onBack != null) "Courses" else null, onBack = onBack) { padding ->
+    // The brand mark stays in the bar when the catalog is opened from Account → Browse Courses, as on iOS.
+    ScreenScaffold(title = null, onBack = onBack) { padding ->
         Refreshable({ vm.refreshCatalog() }, Modifier.padding(padding)) {
             LazyColumn(
                 contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 20.dp),
@@ -145,7 +146,6 @@ fun CatalogScreen(vm: AppViewModel, push: (Route) -> Unit, onBack: (() -> Unit)?
                                 categories.forEach { c ->
                                     DropdownMenuItem(
                                         text = { Text(c) },
-                                        leadingIcon = { Icon(categoryIcon(c), contentDescription = null, tint = Theme.accent) },
                                         onClick = { category = c; menuOpen = false },
                                     )
                                 }
@@ -253,7 +253,7 @@ fun CourseDetailScreen(course: Course, onBack: () -> Unit) {
                     if (course.price > 0) {
                         LabeledValue(
                             "Course fee",
-                            Fmt.money(course.price, course.currency) + if (Site.priceNote.isEmpty()) "" else "\n(${Site.priceNote})",
+                            Fmt.money(course.price, course.currency) + if (Site.priceNote.isEmpty()) "" else " (${Site.priceNote})",
                             fontSize = 15,
                         )
                     }

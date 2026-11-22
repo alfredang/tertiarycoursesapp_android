@@ -21,7 +21,6 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.automirrored.filled.Login
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.School
@@ -99,7 +98,7 @@ fun RootScreen(vm: AppViewModel) {
 @Composable
 private fun GuestTabs(vm: AppViewModel) {
     val tabs = listOf(
-        TabSpec(0, "Sign In", Icons.AutoMirrored.Filled.Login),
+        TabSpec(0, "Sign In", Icons.Filled.AccountCircle),
         TabSpec(1, "Courses", Icons.AutoMirrored.Filled.LibraryBooks),
         TabSpec(2, "About", Icons.Filled.Info),
     )

@@ -33,12 +33,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpCenter
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -115,7 +117,7 @@ fun DocumentScreen(title: String, url: String, onBack: () -> Unit) {
     ScreenScaffold(
         title = title.ifEmpty { "Document" },
         onBack = onBack,
-        navigationIcon = Icons.Filled.Close,
+        navigationText = "Done",
         actions = {
             if (downloading) {
                 Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
@@ -157,12 +159,14 @@ fun DocumentScreen(title: String, url: String, onBack: () -> Unit) {
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             when (val s = state) {
-                DocState.Loading -> LoadingBox("Opening…")
+                DocState.Loading -> LoadingBox()
                 is DocState.Pdf -> PdfPages(s.file)
                 is DocState.Web -> WebPage(s.url)
-                is DocState.Failed -> Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ErrorCard(s.message) { scope.launch { attempt++ } }
-                    OutlineButton("Open in Browser", Icons.AutoMirrored.Filled.OpenInNew) { openUrl(context, url) }
+                is DocState.Failed -> EmptyState(Icons.AutoMirrored.Filled.HelpCenter, "Can't open this document", s.message) {
+                    Button(
+                        onClick = { openUrl(context, url) },
+                        colors = ButtonDefaults.buttonColors(containerColor = Theme.brand, contentColor = Color.White),
+                    ) { Text("Open in Browser") }
                 }
             }
         }
@@ -177,6 +181,21 @@ fun DocumentScreen(title: String, url: String, onBack: () -> Unit) {
             text = { Text(msg) },
         )
     }
+}
+
+/** Meeting links belong to their own apps, and non-web links can't be shown in the viewer. */
+internal fun opensExternally(url: String): Boolean {
+    val uri = try { Uri.parse(url) } catch (e: Exception) { return true }
+    val scheme = uri.scheme.orEmpty().lowercase()
+    if (scheme != "http" && scheme != "https") return true
+    val host = uri.host.orEmpty().lowercase()
+    return listOf("meet.google.com", "zoom.us", "teams.microsoft.com", "teams.live.com", "wa.me")
+        .any { host == it || host.endsWith(".$it") }
+}
+
+/** Opens [url] in the in-app viewer, or in its own app for meeting links. */
+fun openDocument(context: Context, push: (Route) -> Unit, title: String, url: String) {
+    if (opensExternally(url)) openUrl(context, url) else push(Route.Document(title, url))
 }
 
 // ── Download ──
@@ -227,12 +246,11 @@ private object DocumentDownload {
             if (!r.isSuccessful || body == null || type.startsWith("text/html")) {
                 throw ApiException("This document can't be downloaded here. Open it in your browser instead.")
             }
-            var name = suggestedName(r.header("Content-Disposition").orEmpty())
-            if (name.isEmpty() || name == "download" || name == "export") {
-                val ext = if ("pdf" in type) "pdf" else Uri.parse(source).lastPathSegment.orEmpty().substringAfterLast('.', "")
-                    .takeIf { it.length in 1..5 && it.all(Char::isLetterOrDigit) } ?: "pdf"
-                name = title.ifBlank { "Document" } + "." + ext
-            }
+            val name0 = fileName(
+                disposition = r.header("Content-Disposition").orEmpty(),
+                finalUrl = r.request.url.toString(), type = type, source = source, title = title,
+            )
+            var name = name0
             name = name.replace(Regex("""[/\\:*?"<>|\p{Cntrl}]"""), "-").trim().take(120)
             val root = File(context.cacheDir, "downloads")
             // Earlier downloads have been handed over by now; keep the cache small.
@@ -246,6 +264,29 @@ private object DocumentDownload {
             }
             file
         }
+    }
+
+    /**
+     * The name the file is saved under, by the same rule as the iOS app: the name the
+     * server suggests (Content-Disposition, else the last part of the link); when that is
+     * not a usable name ("download", "export", "unknown" or nothing), the document's title
+     * plus the extension: "pdf" for a PDF, else the link's own extension, else "pdf".
+     */
+    fun fileName(disposition: String, finalUrl: String, type: String, source: String, title: String): String {
+        fun extensionOf(link: String) = Uri.parse(link).lastPathSegment.orEmpty().substringAfterLast('.', "")
+            .takeIf { it.length in 1..5 && it.all(Char::isLetterOrDigit) }
+        val ext = if ("pdf" in type) "pdf" else extensionOf(source) ?: "pdf"
+        var name = suggestedName(disposition).trim()
+        if (name.isEmpty()) {
+            // No name from the server: the last part of the link, with the type's extension when it has none.
+            val last = Uri.parse(finalUrl).lastPathSegment.orEmpty().trim()
+            name = if (last.isEmpty() || '.' in last) last else "$last.$ext"
+        }
+        val base = name.substringBeforeLast('.').ifEmpty { name }.lowercase()
+        if (name.isEmpty() || base in setOf("download", "export", "unknown")) {
+            name = title.ifBlank { "Document" }.replace("/", "-") + "." + ext
+        }
+        return name
     }
 
     /** The file name from a Content-Disposition header (`filename*=UTF-8''…` or `filename="…"`). */

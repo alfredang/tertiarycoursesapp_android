@@ -35,14 +35,14 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Quiz
-import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.AssignmentInd
+import androidx.compose.material.icons.filled.FindInPage
 import androidx.compose.material.icons.filled.HighlightOff
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Person
@@ -199,7 +199,6 @@ fun ClassesScreen(vm: AppViewModel, push: (Route) -> Unit) {
                     BucketPicker(bucket, count = { items(it).size }) { vm.bucket = it }
                 }
                 val err = vm.loadError
-                if (classes != null && err != null) item { ErrorCard(err) { scope.launch { vm.refreshClasses() } } }
                 when {
                     classes == null -> item {
                         if (err != null) ErrorCard(err) { scope.launch { vm.refreshClasses() } }
@@ -251,9 +250,9 @@ private fun emptyTitle(b: Bucket) = when (b) {
 }
 
 private fun emptyText(b: Bucket, trainer: Boolean) = if (trainer) when (b) {
-    Bucket.CURRENT -> "Classes you are teaching or attending today appear here, with attendance and courseware."
-    Bucket.UPCOMING -> "Classes you are scheduled to teach or attend will appear here."
-    Bucket.PAST -> "Classes you have taught or attended appear here."
+    Bucket.CURRENT -> "Classes running now appear here, with attendance and the class materials."
+    Bucket.UPCOMING -> "Classes you are scheduled to teach or attend appear here."
+    Bucket.PAST -> "Completed classes you taught or attended appear here."
 } else when (b) {
     Bucket.CURRENT -> "Classes that are running now appear here, with check-in and your materials."
     Bucket.UPCOMING -> "Register for a course on ${Site.websiteLabel} and it will appear here."
@@ -277,12 +276,12 @@ fun ClassCard(item: ClassItem, showRole: Boolean = false, onClick: (() -> Unit)?
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(item.classId.ifEmpty { item.sku }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                    Text(item.classId.ifEmpty { item.sku }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1)
+                    // Trainers see which classes they teach and which they attend.
+                    if (showRole) StatusChip(if (item.isTeaching) "Teaching" else "Attending", if (item.isTeaching) Theme.accent else Theme.secondaryText)
                     if (item.isPendingPayment) StatusChip("Pending payment", Theme.warning)
                     else if (item.bucket == "current") StatusChip("In progress", Theme.success)
                 }
-                // Trainers see which classes they teach and which they attend.
-                if (showRole) StatusChip(if (item.isTeaching) "Teaching" else "Attending", if (item.isTeaching) Theme.accent else Theme.secondaryText)
                 Text(item.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp)
             }
             if (onClick != null) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText)
@@ -292,8 +291,11 @@ fun ClassCard(item: ClassItem, showRole: Boolean = false, onClick: (() -> Unit)?
             IconLine(Icons.Filled.Event, Fmt.range(item.startDate, item.endDate), color = Theme.secondaryText, iconTint = Theme.tertiaryText)
             if (item.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(item.startTime, item.endTime), color = Theme.secondaryText, iconTint = Theme.tertiaryText)
             if (item.mode.isNotEmpty()) IconLine(modeIcon(item.mode), item.mode, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
-            if (item.trainer.isNotEmpty() && !item.isTeaching) IconLine(Icons.Filled.Person, item.trainer, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
-            if (item.isTeaching) IconLine(Icons.Filled.Groups, if (item.learnerCount == 1) "1 learner" else "${item.learnerCount} learners", color = Theme.secondaryText, iconTint = Theme.tertiaryText)
+            if (item.isTeaching) {
+                item.learnerCount?.let { n -> IconLine(Icons.Filled.Groups, "$n learner${if (n == 1) "" else "s"}", color = Theme.secondaryText, iconTint = Theme.tertiaryText) }
+            } else if (item.trainer.isNotEmpty()) {
+                IconLine(Icons.Filled.Person, item.trainer, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
+            }
         }
         if (item.certificate != null || item.surveySubmitted) {
             Spacer(Modifier.height(10.dp))
@@ -355,10 +357,10 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
                             }
                         }
                         MaterialsList("Class materials", (d.materials + d.documents).filter { it.url.isNotEmpty() },
-                            "Your trainer will share the materials for this class here.") { push(Route.Document(it.title, it.url)) }
+                            "Your trainer will share the materials for this class here.") { openDocument(context, push, it.title, it.url) }
                         if (d.quizzes.isNotEmpty()) QuizzesCard(d.quizzes) { push(Route.Quiz(runId, it.quizId, it.title)) }
                         SurveyCard(d, openExternal = { openUrl(context, d.survey.externalUrl) }) { push(Route.Survey(runId)) }
-                        CertificateCard(d) { push(Route.Document("Certificate", it.url)) }
+                        CertificateCard(d) { openDocument(context, push, "Certificate", it.url) }
                         SessionsCard(d)
                     }
                     error != null -> ErrorCard(error!!) { scope.launch { load() } }
@@ -428,11 +430,12 @@ private fun AttendanceCard(d: ClassDetail, checkingIn: Boolean, checkIn: () -> U
 
 fun materialIcon(m: Material): ImageVector = when (m.key) {
     "learner_slides_url", "trainer_slides_url" -> Icons.Filled.Slideshow
-    "learner_guide_url", "facilitator_guide_url" -> Icons.AutoMirrored.Filled.MenuBook
-    "lesson_plan_url", "assessment_plan_url" -> Icons.AutoMirrored.Filled.ListAlt
+    "learner_guide_url" -> Icons.AutoMirrored.Filled.MenuBook
+    "lesson_plan_url" -> Icons.AutoMirrored.Filled.ListAlt
     "lab_url", "lab_simulator_url" -> Icons.Filled.Science
     "practice_exam_url" -> Icons.Filled.Quiz
-    "courseware_folder_url" -> Icons.Filled.Folder
+    "facilitator_guide_url" -> Icons.Filled.AssignmentInd
+    "assessment_plan_url" -> Icons.Filled.FindInPage
     else -> Icons.Filled.Description
 }
 
@@ -451,7 +454,7 @@ private fun QuizzesCard(quizzes: List<QuizSummary>, open: (QuizSummary) -> Unit)
             ) {
                 Icon(
                     if (q.previous == null) Icons.Filled.Quiz else Icons.Filled.CheckCircle, contentDescription = null,
-                    tint = if (q.previous == null) Theme.accent else Theme.success, modifier = Modifier.size(22.dp),
+                    tint = if (q.previous == null) Theme.brand else Theme.success, modifier = Modifier.size(22.dp),
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
@@ -461,7 +464,7 @@ private fun QuizzesCard(quizzes: List<QuizSummary>, open: (QuizSummary) -> Unit)
                         fontSize = 13.sp, color = Theme.secondaryText,
                     )
                 }
-                Text(if (q.previous == null) "Start" else "Retake", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                Text(if (q.previous == null) "Start" else "Retake", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.brand)
             }
             if (i < quizzes.lastIndex) HorizontalDivider(color = Theme.cardBorder)
         }
@@ -510,7 +513,6 @@ private fun CertificateCard(d: ClassDetail, open: (CertificateInfo) -> Unit) {
 
 @Composable
 private fun SessionsCard(d: ClassDetail) {
-    if (d.sessions.isEmpty()) return
     InfoCard {
         SectionLabel("Sessions")
         Spacer(Modifier.height(8.dp))
@@ -561,7 +563,7 @@ fun SurveyScreen(vm: AppViewModel, runId: Int, onClose: () -> Unit) {
     ScreenScaffold(
         title = survey?.title?.ifEmpty { null } ?: "Course Feedback",
         onBack = onClose,
-        navigationIcon = Icons.Filled.Close,
+        navigationText = "Cancel",
         actions = {
             TextButton(
                 onClick = {
@@ -599,9 +601,6 @@ fun SurveyScreen(vm: AppViewModel, runId: Int, onClose: () -> Unit) {
                     }
                 }
                 error?.let { Text(it, color = Theme.danger, fontSize = 13.sp) }
-                if (missing.isNotEmpty()) {
-                    Text("* Required — answer every starred question to submit.", fontSize = 12.sp, color = Theme.secondaryText)
-                }
                 Spacer(Modifier.height(24.dp))
             } else if (error != null) {
                 ErrorCard(error!!) { scope.launch { load() } }
@@ -650,7 +649,7 @@ fun QuizScreen(vm: AppViewModel, runId: Int, quizId: Int, title: String, onClose
     ScreenScaffold(
         title = quiz?.title?.ifEmpty { null } ?: title,
         onBack = onClose,
-        navigationIcon = Icons.Filled.Close,
+        navigationText = if (result == null) "Cancel" else "Done",
         actions = {
             if (result == null) {
                 TextButton(
@@ -719,7 +718,7 @@ fun QuizScreen(vm: AppViewModel, runId: Int, quizId: Int, title: String, onClose
                                     },
                                     contentDescription = null,
                                     tint = when {
-                                        marked == null -> if (chosen) Theme.accent else Theme.secondaryText
+                                        marked == null -> if (chosen) Theme.brand else Theme.secondaryText
                                         isCorrect -> Theme.success
                                         wrongPick -> Theme.danger
                                         else -> Theme.secondaryText

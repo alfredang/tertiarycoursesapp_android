@@ -161,7 +161,8 @@ data class ClassItem(
     val surveySubmitted: Boolean,
     /** "learner" (attending) or "trainer" (teaching). */
     val role: String = "learner",
-    val learnerCount: Int = 0,
+    /** Learners on the roster of a class this account teaches; null when the site does not say. */
+    val learnerCount: Int? = null,
 ) {
     val isTeaching: Boolean get() = role == "trainer"
     val id: String get() = if (runId > 0) "$role-run-$runId" else "order-$orderNo-$sku-$startDate"
@@ -187,7 +188,8 @@ data class ClassItem(
             j.str("start_time"), j.str("end_time"), j.str("mode"), j.str("venue"), j.str("room"), j.str("virtual_link"),
             j.str("trainer"), j.str("status"), j.str("order_no"), j.str("bucket"), j.strings("days"), j.str("image_url"),
             j.obj("certificate")?.let(CertificateInfo::from), j.bool("survey_submitted"),
-            if (j.str("role") == "trainer") "trainer" else "learner", j.int("learner_count"),
+            if (j.str("role") == "trainer") "trainer" else "learner",
+            if (j.has("learner_count") && !j.isNull("learner_count")) j.int("learner_count") else null,
         )
     }
 }
@@ -447,7 +449,11 @@ data class Order(
 // ── Trainer profile, payout and training hours ──
 
 /** A trainer's certification as edited on the Account page. */
-data class CertDraft(val name: String = "", val issuer: String = "", val year: String = "") {
+data class CertDraft(
+    val name: String = "", val issuer: String = "", val year: String = "",
+    /** Identifies the row on screen while it is edited; never sent to the site. */
+    val id: String = java.util.UUID.randomUUID().toString(),
+) {
     companion object {
         fun from(j: JSONObject) = CertDraft(j.str("name"), j.str("issuer"), j.int("year").takeIf { it > 0 }?.toString().orEmpty())
     }

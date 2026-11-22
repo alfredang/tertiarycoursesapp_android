@@ -126,6 +126,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var payouts by mutableStateOf<PayoutsReply?>(null); private set
     var trainingHours by mutableStateOf<TrainingHoursReply?>(null); private set
     var staffDashboard by mutableStateOf<StaffDashboard?>(null); private set
+    /** The dashboard reloads each time its tab is shown; the old figures are dropped first. */
+    fun clearStaffDashboard() { staffDashboard = null }
 
     /** Appearance: the account's saved theme while signed in, the device setting otherwise. */
     var themePref by mutableStateOf(settings.theme); private set
@@ -350,7 +352,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 .apply { if (linkedin != null) put("linkedin_url", linkedin.trim()) })
         } catch (e: ApiException) {
             // A site that hasn't been updated yet has no profile endpoint.
-            if (e.status == 404) throw ApiException("Your appearance is saved on this device. Editing your name and phone isn't available on this site yet.", 404)
+            if (e.status == 404) throw ApiException("Your appearance is saved on this device. Editing your name and phone will be available shortly.", 404)
             throw e
         }
         reply.obj("learner")?.let { rememberLearner(Learner.from(it)) }
@@ -384,7 +386,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun loadStaffDashboard(role: String) {
-        if (staffDashboard?.role != role) staffDashboard = null
         staffDashboard = StaffDashboard.from(api.getAsync("staff/dashboard", mapOf("role" to role)))
     }
 
@@ -396,14 +397,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun rescheduleReminders() {
         val all = if (remindersOn && learner != null) classes?.let { it.current + it.upcoming } ?: emptyList() else emptyList()
-        Reminders.schedule(getApplication(), Reminders.build(all))
+        Reminders.schedule(getApplication(), Reminders.build(all, showRole = isTrainer))
     }
 
-    /** The app came back to the foreground: reload the classes, at most once every 5 minutes. */
+    private var foregroundRefresh: kotlinx.coroutines.Job? = null
+
+    /**
+     * The app came back to the foreground: re-read the account (`auth/me`: name, roles,
+     * theme, picture) and reload the classes, at most once every 5 minutes.
+     */
     fun onForeground() {
         if (!isSignedIn || restoring) return
-        if (System.currentTimeMillis() - lastClassRefresh < 5 * 60_000) return
-        viewModelScope.launch { refreshClasses() }
+        if (lastClassRefresh > 0 && System.currentTimeMillis() - lastClassRefresh < 5 * 60_000) return
+        if (foregroundRefresh?.isActive == true) return
+        foregroundRefresh = viewModelScope.launch {
+            try {
+                rememberLearner(Learner.from(api.getAsync("auth/me").getJSONObject("learner")))
+            } catch (_: Exception) {
+                // Offline, or the session ended (a 401 signs out through the API client).
+            }
+            if (isSignedIn) refreshClasses()
+        }
     }
 
     fun signOut() {
@@ -462,7 +476,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun refreshClasses() {
-        lastClassRefresh = System.currentTimeMillis()
         var error: String? = null
         coroutineScope {
             val mine = async {
@@ -482,7 +495,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
             val l = mine.await()
             val t = teaching.await()
-            if (l != null) learnerClasses = l
+            if (l != null) {
+                learnerClasses = l
+                lastClassRefresh = System.currentTimeMillis()
+            }
             if (t != null || !isTrainer) trainerClasses = t
         }
         val reply = classes

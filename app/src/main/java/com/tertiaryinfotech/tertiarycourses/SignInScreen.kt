@@ -16,11 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MarkEmailUnread
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SegmentedButton
@@ -46,7 +42,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -62,7 +57,6 @@ fun SignInScreen(vm: AppViewModel) {
     var method by rememberSaveable { mutableStateOf(Method.CODE) }
     var email by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
     var code by remember { mutableStateOf("") }
     var codeSent by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -105,9 +99,9 @@ fun SignInScreen(vm: AppViewModel) {
             verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Sign in", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                Text("Learner and trainer sign in", fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 28.sp)
                 Text(
-                    "Learners and trainers: use your ${Site.websiteLabel} email to see your classes, materials, attendance, certificates and billing.",
+                    "Use the email you registered with on ${Site.websiteLabel} to see your classes, materials, attendance, certificates and billing.",
                     fontSize = 15.sp, color = Theme.secondaryText, lineHeight = 21.sp,
                 )
             }
@@ -181,15 +175,7 @@ fun SignInScreen(vm: AppViewModel) {
                                 onValueChange = { password = it },
                                 placeholder = { Text("Your website password") },
                                 singleLine = true,
-                                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    IconButton(onClick = { showPassword = !showPassword }) {
-                                        Icon(
-                                            if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                            contentDescription = if (showPassword) "Hide password" else "Show password",
-                                        )
-                                    }
-                                },
+                                visualTransformation = PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
                                 keyboardActions = KeyboardActions(onGo = { signInWithPassword() }),
                                 shape = RoundedCornerShape(10.dp),
@@ -200,7 +186,7 @@ fun SignInScreen(vm: AppViewModel) {
                                 signInWithPassword()
                             }
                             TextButton(onClick = { openUrl(context, Site.forgotPasswordUrl) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                                Text("Forgot your password?", fontSize = 14.sp)
+                                Text("Forgot your password?", fontSize = 13.sp)
                             }
                         }
                         codeSent -> {
@@ -218,7 +204,7 @@ fun SignInScreen(vm: AppViewModel) {
                             )
                             PrimaryButton("Verify & Sign In", enabled = code.length == 6, busy = busy) { verify() }
                             TextButton(onClick = { sendCode() }, enabled = !busy, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                                Text("Send a new code", fontSize = 14.sp)
+                                Text("Send a new code", fontSize = 13.sp)
                             }
                         }
                         else -> PrimaryButton("Email Me a Code", enabled = emailValid, busy = busy) { sendCode() }
@@ -233,7 +219,7 @@ fun SignInScreen(vm: AppViewModel) {
                 IconLine(Icons.Filled.AutoAwesome, "New to ${Site.siteName}?", color = Theme.accent, iconTint = Theme.accent, fontSize = 15, weight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Your learner account is created when you register for a course on ${Site.websiteLabel}. Browse the Courses tab to find one.",
+                    "Learners: your account is created when you register for a course on ${Site.websiteLabel}. Trainers: use your ${Site.websiteLabel} trainer login.",
                     fontSize = 13.sp, color = Theme.secondaryText, lineHeight = 18.sp,
                 )
             }

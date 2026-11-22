@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
@@ -189,7 +190,7 @@ fun BrandHeader() {
         BrandBadge()
         Spacer(Modifier.width(8.dp))
         Text(
-            Site.siteName, color = Theme.accent, fontWeight = FontWeight.SemiBold, fontSize = 17.sp,
+            Site.siteName, color = Theme.accent, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
@@ -205,6 +206,8 @@ fun ScreenScaffold(
     title: String? = null,
     onBack: (() -> Unit)? = null,
     navigationIcon: ImageVector = Icons.AutoMirrored.Filled.ArrowBack,
+    /** A text button ("Cancel", "Done") in place of the back arrow: screens that are sheets on iOS. */
+    navigationText: String? = null,
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     content: @Composable (androidx.compose.foundation.layout.PaddingValues) -> Unit,
 ) {
@@ -218,7 +221,9 @@ fun ScreenScaffold(
                     else Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                 },
                 navigationIcon = {
-                    if (onBack != null) IconButton(onClick = onBack) { Icon(navigationIcon, contentDescription = "Back") }
+                    if (onBack != null && navigationText != null) {
+                        TextButton(onClick = onBack) { Text(navigationText, fontSize = 16.sp, color = Theme.accent) }
+                    } else if (onBack != null) IconButton(onClick = onBack) { Icon(navigationIcon, contentDescription = "Back") }
                 },
                 actions = actions,
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = Theme.page, scrolledContainerColor = Theme.page),
