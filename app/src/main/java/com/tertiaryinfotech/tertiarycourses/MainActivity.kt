@@ -56,8 +56,9 @@ class MainActivity : ComponentActivity() {
         // Opened by the site at the end of admin sign-in with Google (app was closed meanwhile).
         vm.onAuthCallback(intent?.data)
         setContent {
-            // Signed in: the account's saved appearance. Signed out: the device setting.
-            AppTheme(vm.themePref) {
+            // Signed in (or restoring a session): the account's saved appearance.
+            // Signed out: always light, so the sign-in pages never follow a dark device.
+            AppTheme(if (vm.isSignedIn || vm.restoring) vm.themePref else "light") {
                 val dark = Theme.dark
                 // System bar icons follow the app's appearance, not the device's.
                 LaunchedEffect(dark) {
