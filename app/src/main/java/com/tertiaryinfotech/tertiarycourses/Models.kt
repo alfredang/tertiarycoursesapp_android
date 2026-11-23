@@ -319,10 +319,17 @@ data class LessonTopic(val title: String, val subtopics: List<LessonSubtopic>) {
     }
 }
 
-/** The course's practice exam and the class's self-register link (trainer). */
-data class PracticeExam(val examCode: String, val examUrl: String, val selfRegisterUrl: String, val open: Boolean) {
+/**
+ * The course's practice exam and the class's self-register form (pre-filled for a learner).
+ * The apps never show the form as a QR code: the QR is on the web class page only.
+ * [registered] is whether the signed-in person is registered for this class's exam (a trainer is
+ * registered automatically); null when the exams site could not be reached or the site predates it.
+ */
+data class PracticeExam(val examCode: String, val examUrl: String, val selfRegisterUrl: String, val open: Boolean, val registered: Boolean? = null) {
     companion object {
-        fun from(j: JSONObject) = PracticeExam(j.str("exam_code"), j.str("exam_url"), j.str("self_register_url"), j.optBool("open") ?: true)
+        fun from(j: JSONObject) = PracticeExam(
+            j.str("exam_code"), j.str("exam_url"), j.str("self_register_url"), j.optBool("open") ?: true, j.optBool("registered"),
+        )
     }
 }
 
@@ -420,6 +427,8 @@ data class ClassDetail(
     // 1.6: the website's class page sections (absent from an older site).
     val announcements: List<Announcement> = emptyList(),
     val lesson: List<LessonTopic> = emptyList(),
+    /** The course's practice exam, opened with the self-register form (absent before 1.6.1). */
+    val practiceExam: PracticeExam? = null,
 ) {
     companion object {
         fun from(j: JSONObject) = ClassDetail(
@@ -430,6 +439,7 @@ data class ClassDetail(
             j.obj("certificate")?.let(CertificateInfo::from), j.str("certificate_rule"),
             j.list("quizzes", QuizSummary::from),
             j.list("announcements", Announcement::from), j.list("lesson", LessonTopic::from),
+            j.obj("practice_exam")?.let(PracticeExam::from),
         )
     }
 }

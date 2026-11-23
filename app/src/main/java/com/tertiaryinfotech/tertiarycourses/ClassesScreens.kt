@@ -356,8 +356,8 @@ fun ClassCard(item: ClassItem, onClick: (() -> Unit)?) {
 
 /**
  * The learner's class page, as the website's: the summary card, then E-Attendance,
- * Announcements, Virtual Class Link, Courseware, Lesson, Course Survey and Certificate,
- * each a collapsible card that starts collapsed.
+ * Announcements, Virtual Class Link, Courseware, Lesson, Practice Exam (when the course has
+ * one), Course Survey and Certificate, each a collapsible card that starts collapsed.
  */
 @Composable
 fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route) -> Unit, onBack: () -> Unit) {
@@ -446,6 +446,20 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
                                         if (link.type == "video") openUrl(context, link.url) else openDocument(context, push, link.title, link.url)
                                     },
                                     quizRow = { link -> LearnerQuizRow(link.quizId, link.title, link.questions, link.previous, openQuiz) },
+                                )
+                            }
+                        }
+                        d.practiceExam?.let { pe ->
+                            FoldCard(
+                                "Practice Exam", Icons.Filled.Quiz, "Practice Exam" in open.value, { open.toggle("Practice Exam") },
+                                trailing = pe.examCode.ifEmpty { null },
+                            ) {
+                                // The self-register form opens in the in-app viewer. Coming back recomposes this
+                                // screen, which loads the class again, so the section shows "You are registered".
+                                PracticeExamContent(
+                                    pe, trainer = false,
+                                    openForm = { openDocument(context, push, "${pe.examCode} Practice Exam".trim(), it) },
+                                    openSite = { openUrl(context, it) },
                                 )
                             }
                         }

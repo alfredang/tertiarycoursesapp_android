@@ -8,13 +8,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The website's class page and the TIA house layout, in step with the iOS app.
 
 ### Added
-- Class page as the website's: a summary card (venue address opens Google Maps, Join online class), then collapsible E-Attendance, Announcements, Virtual Class Link, Courseware, Lesson (topics, sub topics, links and quizzes) and Course Survey / Certificate (learner) or Practice Exam / Course Feedback Summary (trainer).
-- Trainers post and delete class announcements, and show a QR code for each lesson quiz and the practice exam.
+- Class page as the website's: a summary card (venue address opens Google Maps, Join online class), then collapsible E-Attendance, Announcements, Virtual Class Link, Courseware, Lesson (topics, sub topics, links and quizzes), Practice Exam (when the course has one) and Course Survey / Certificate (learner) or Course Feedback Summary (trainer).
+- Trainers post and delete class announcements, and show a QR code for each lesson quiz.
+- Practice Exam: learners register on the class page with a form filled in with their name and email; trainers are registered automatically and can open the same form for a learner. The self-register QR code is on the web class page only.
 - Support tab for learners: send feedback to the academy, Email, Tel, WhatsApp and the address. Billing moved to a row in Account.
 - Admin Home (running today, next 30 days, learners today; Current / Upcoming with search), Admin Calendar, Developer Home (course list with filters) and a Courses tab for staff views.
 - "Find your course" search on My Classes.
 
 ### Changed
+- Trainer Certifications: the quick-add buttons (ACLP, ACTA, DDDLP, DACE) show their names, on one line under "Quick add".
 - Every account with more than one role can switch with View as, in every country's app.
 - Class cards show the course code, chips, dates, the venue address (mode only for Live Online or Hybrid) and learners or the trainer.
 - Calendar: month grid with class titles in each day, Today, swipe to change month, Upcoming / Past legend and Jump to next class.

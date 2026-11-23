@@ -285,13 +285,16 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                             )
                         }
                         d.practiceExam?.let { pe ->
-                            FoldCard("Practice Exam", Icons.Filled.Quiz, "Practice Exam" in open.value, { open.toggle("Practice Exam") }) {
-                                PracticeExamContent(pe, openSite = { openUrl(context, pe.examUrl) }) {
-                                    qr = QrLink(
-                                        "Practice Exam", pe.selfRegisterUrl, if (pe.examCode.isNotEmpty()) "Exam code ${pe.examCode}" else "",
-                                        "Learners scan this to register for the practice exam of this class.", "Share Register Link", "practiceExamQr",
-                                    )
-                                }
+                            FoldCard(
+                                "Practice Exam", Icons.Filled.Quiz, "Practice Exam" in open.value, { open.toggle("Practice Exam") },
+                                trailing = pe.examCode.ifEmpty { null },
+                            ) {
+                                // No QR in the app: the trainer opens the self-register form (for a learner without the app).
+                                PracticeExamContent(
+                                    pe, trainer = true,
+                                    openForm = { openDocument(context, push, "${pe.examCode} Practice Exam".trim(), it) },
+                                    openSite = { openUrl(context, it) },
+                                )
                             }
                         }
                         FoldCard("Course Feedback Summary", Icons.Filled.BarChart, "Course Feedback Summary" in open.value, { open.toggle("Course Feedback Summary") }) {
@@ -345,25 +348,11 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     }
 }
 
-/** A link the trainer shows the class as a QR code (check-in, a lesson quiz, the practice exam). */
+/** A link the trainer shows the class as a QR code (check-in, a lesson quiz). */
 private data class QrLink(val heading: String, val url: String, val caption: String, val hint: String, val shareLabel: String, val tag: String)
 
-/** The course's practice exam: its code, whether self-registration is open, and the register QR. */
-@Composable
-private fun PracticeExamContent(pe: PracticeExam, openSite: () -> Unit, showQr: () -> Unit) {
-    if (pe.examCode.isNotEmpty()) LabeledValue("Exam code", pe.examCode, fontSize = 15, weight = FontWeight.SemiBold, color = Theme.ink)
-    Text(
-        if (pe.open) "Self-registration is open for this class." else "Self-registration is closed for this class.",
-        fontSize = 14.sp, color = if (pe.open) Theme.success else Theme.secondaryText,
-    )
-    if (pe.selfRegisterUrl.isNotEmpty()) {
-        TonalButton("Show Self-register QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("practiceExamQR"), onClick = showQr)
-    }
-    if (pe.examUrl.isNotEmpty()) LinkRow(Icons.Filled.Public, "Open the practice exam site", subtitle = pe.examUrl, external = true, onClick = openSite)
-}
-
 /**
- * A link as a QR code for learners to scan (check-in, a lesson quiz, the practice exam): a full-screen
+ * A link as a QR code for learners to scan (check-in, a lesson quiz): a full-screen
  * sheet with the class title, the session, the code, a hint and a button that shares the link.
  */
 @OptIn(ExperimentalMaterial3Api::class)

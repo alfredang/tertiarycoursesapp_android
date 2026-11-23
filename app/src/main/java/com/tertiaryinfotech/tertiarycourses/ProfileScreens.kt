@@ -18,6 +18,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -86,6 +88,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
@@ -297,17 +300,23 @@ fun ProfileSections(vm: AppViewModel) {
             val missing = TrainerBadge.all.filter { it.code !in badges }
             if (missing.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Quick add", fontSize = 13.sp, color = Theme.secondaryText)
+                Spacer(Modifier.height(8.dp))
+                // One line of pills, each "+ CODE"; scrolls sideways on a narrow screen.
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("quickAddCerts"),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     missing.forEach { b ->
                         Row(
                             Modifier.clip(RoundedCornerShape(50)).background(Theme.accentSoft)
-                                .clickable { certs.add(CertDraft(b.name, b.issuer)) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                                .semantics { contentDescription = "Add ${b.code}" },
+                                .clickable(role = Role.Button, onClickLabel = "Add ${b.name}") { certs.add(CertDraft(b.name, b.issuer)) }
+                                .padding(horizontal = 12.dp, vertical = 7.dp)
+                                .testTag("quickAdd-${b.code}"),
                             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Icon(Icons.Filled.Add, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(14.dp))
-                            Text(b.code, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                            Icon(Icons.Filled.Add, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(16.dp))
+                            Text(b.code, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1, softWrap = false)
                         }
                     }
                 }

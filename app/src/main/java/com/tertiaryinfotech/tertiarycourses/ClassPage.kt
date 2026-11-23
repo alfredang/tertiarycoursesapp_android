@@ -19,16 +19,19 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.StarHalf
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material3.HorizontalDivider
@@ -212,6 +215,54 @@ fun LessonContent(topics: List<LessonTopic>, openLink: (LessonLink) -> Unit, qui
 }
 
 fun questionCount(n: Int) = "$n question${if (n == 1) "" else "s"}"
+
+// ── Practice Exam ──
+
+/** The exams site's sign-in page. */
+fun practiceExamLoginUrl(examUrl: String): String {
+    val site = examUrl.trim().trimEnd('/')
+    return if (site.isEmpty() || site.endsWith("/login")) site else "$site/login"
+}
+
+/**
+ * The Practice Exam section of the class page (trainer and learner). No QR code in the apps: the
+ * learner (or the trainer, for someone without the app) fills in the self-register form inside
+ * the app with [openForm]; [openSite] opens the exams site's sign-in page.
+ */
+@Composable
+fun PracticeExamContent(exam: PracticeExam, trainer: Boolean, openForm: (String) -> Unit, openSite: (String) -> Unit) {
+    val code = exam.examCode
+    when {
+        exam.registered == true -> IconLine(
+            Icons.Filled.Verified,
+            if (trainer) "You are registered for the $code practice exam."
+            else "You are registered for the $code practice exam. Sign in with your email to start it.",
+            color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
+        )
+        trainer -> Text(
+            "You are registered for the $code practice exam automatically. Learners register with the self-register form; " +
+                "the QR code for the class to scan is on the web class page.",
+            fontSize = 15.sp, lineHeight = 21.sp, color = Theme.ink,
+        )
+        else -> Text(
+            "Register for the $code practice exam on Tertiary Exams. We email you the exam link.",
+            fontSize = 15.sp, lineHeight = 21.sp, color = Theme.ink,
+        )
+    }
+    if (!exam.open && exam.registered != true) {
+        Text("Registration opens the day before the class and closes 7 days after it ends.", fontSize = 13.sp, lineHeight = 18.sp, color = Theme.secondaryText)
+    }
+    if ((exam.registered != true || trainer) && exam.open && exam.selfRegisterUrl.isNotEmpty()) {
+        PrimaryButton(
+            if (trainer) "Open Self-Register Form" else "Register for the Practice Exam", Icons.Filled.EditNote,
+            modifier = Modifier.testTag("practiceExamForm"),
+        ) { openForm(exam.selfRegisterUrl) }
+    }
+    val login = practiceExamLoginUrl(exam.examUrl)
+    if (login.isNotEmpty()) {
+        LinkRow(Icons.Filled.Public, "Open Tertiary Exams", external = true, tag = "practiceExamSite") { openSite(login) }
+    }
+}
 
 // ── Course Feedback Summary (trainer) ──
 
