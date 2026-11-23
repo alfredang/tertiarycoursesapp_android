@@ -18,8 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Schedule
@@ -41,7 +41,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
@@ -118,28 +117,40 @@ private fun GuestTabs(vm: AppViewModel) {
 private fun LearnerTabs(vm: AppViewModel) {
     val staff = vm.staffRole
     val trainer = vm.isTrainer
-    // A trainer sees what they are paid and the hours they have taught; a learner sees
-    // certificates and billing. Staff: Dashboard, My Classes, Calendar, Account.
+    // Learner: My Classes, Calendar, Certificates, Support, Account (Billing is a row in Account).
+    // Trainer: My Classes, Calendar, Payout, Hours, Account.
+    // Admin: Home, Calendar, Courses, Account. Developer, Marketing, Franchise Admin: Home, Courses, Account.
     val tabs = buildList {
-        if (staff != null) add(TabSpec(AppViewModel.TAB_DASHBOARD, "Dashboard", Icons.Filled.Dashboard))
-        add(TabSpec(AppViewModel.TAB_CLASSES, "My Classes", Icons.Filled.School))
-        add(TabSpec(AppViewModel.TAB_CALENDAR, "Calendar", Icons.Filled.CalendarMonth))
-        if (staff == null && trainer) {
-            add(TabSpec(AppViewModel.TAB_THIRD, "Payout", Icons.Filled.Payments))
-            add(TabSpec(AppViewModel.TAB_FOURTH, "Hours", Icons.Filled.Schedule))
-        } else if (staff == null) {
-            add(TabSpec(AppViewModel.TAB_THIRD, "Certificates", Icons.Filled.WorkspacePremium))
-            add(TabSpec(AppViewModel.TAB_FOURTH, "Billing", Icons.Filled.CreditCard))
+        if (staff != null) {
+            add(TabSpec(AppViewModel.TAB_DASHBOARD, "Home", Icons.Filled.Home))
+            if (staff == "admin") add(TabSpec(AppViewModel.TAB_CALENDAR, "Calendar", Icons.Filled.CalendarMonth))
+            add(TabSpec(AppViewModel.TAB_COURSES, "Courses", Icons.AutoMirrored.Filled.LibraryBooks))
+        } else {
+            add(TabSpec(AppViewModel.TAB_CLASSES, "My Classes", Icons.Filled.School))
+            add(TabSpec(AppViewModel.TAB_CALENDAR, "Calendar", Icons.Filled.CalendarMonth))
+            if (trainer) {
+                add(TabSpec(AppViewModel.TAB_THIRD, "Payout", Icons.Filled.Payments))
+                add(TabSpec(AppViewModel.TAB_FOURTH, "Hours", Icons.Filled.Schedule))
+            } else {
+                add(TabSpec(AppViewModel.TAB_THIRD, "Certificates", Icons.Filled.WorkspacePremium))
+                add(TabSpec(AppViewModel.TAB_SUPPORT, "Support", Icons.Filled.SupportAgent))
+            }
         }
         add(TabSpec(AppViewModel.TAB_ACCOUNT, "Account", Icons.Filled.AccountCircle))
     }
     Tabs(vm, tabs, vm.learnerTab, { vm.learnerTab = it }, "learner") { id, push ->
         when (id) {
-            AppViewModel.TAB_DASHBOARD -> StaffDashboardScreen(vm, staff ?: vm.activeRole)
+            AppViewModel.TAB_DASHBOARD -> when (val role = staff ?: vm.activeRole) {
+                "admin" -> AdminHomeScreen(vm)
+                "developer" -> DeveloperHomeScreen(vm)
+                else -> StaffDashboardScreen(vm, role)
+            }
             AppViewModel.TAB_CLASSES -> ClassesScreen(vm, push)
-            AppViewModel.TAB_CALENDAR -> CalendarScreen(vm, push)
+            AppViewModel.TAB_CALENDAR -> if (staff == "admin") AdminCalendarScreen(vm) else CalendarScreen(vm, push)
+            AppViewModel.TAB_COURSES -> CatalogScreen(vm, push = push)
             AppViewModel.TAB_THIRD -> if (trainer) PayoutScreen(vm) else CertificatesScreen(vm, push)
-            AppViewModel.TAB_FOURTH -> if (trainer) TrainingHoursScreen(vm) else BillingScreen(vm)
+            AppViewModel.TAB_FOURTH -> TrainingHoursScreen(vm)
+            AppViewModel.TAB_SUPPORT -> SupportScreen(vm)
             else -> AccountScreen(vm, push)
         }
     }
@@ -223,5 +234,7 @@ private fun RouteScreen(vm: AppViewModel, route: Route, push: (Route) -> Unit, p
         Route.Catalog -> CatalogScreen(vm, push = push, onBack = pop)
         Route.Feedback -> FeedbackScreen(onBack = pop)
         Route.About -> AboutScreen(onBack = pop)
+        Route.Billing -> BillingScreen(vm, onBack = pop)
+        Route.Support -> SupportScreen(vm, onBack = pop)
     }
 }

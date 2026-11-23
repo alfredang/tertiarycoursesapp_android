@@ -1,9 +1,19 @@
 package com.tertiaryinfotech.tertiarycourses
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Quiz
+import androidx.compose.material.icons.filled.School
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,7 +36,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.LibraryBooks
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -38,7 +47,6 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MarkEmailUnread
 import androidx.compose.material.icons.filled.Newspaper
 import androidx.compose.material.icons.filled.Payments
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Public
@@ -47,9 +55,7 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -74,13 +80,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -108,7 +110,11 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.launch
 
-/** A class the signed-in trainer teaches: overview, attendance, materials, feedback count. */
+/**
+ * A class the signed-in trainer teaches, as the website's class page: the summary card,
+ * then E-Attendance, Announcements, Virtual Class Link, Courseware, Lesson, Practice Exam
+ * (when the course has one) and Course Feedback Summary, each collapsed until tapped.
+ */
 @Composable
 fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -122,8 +128,13 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     var dirty by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-    var showQr by remember { mutableStateOf(false) }
-    var surveyQr by remember { mutableStateOf<SurveyLink?>(null) }
+    var qr by remember { mutableStateOf<QrLink?>(null) }
+    // Announcements: the composer, the post being deleted, and the latest list from a post or delete.
+    var draft by rememberSaveable(runId) { mutableStateOf("") }
+    var posting by remember { mutableStateOf(false) }
+    var postProblem by remember { mutableStateOf<String?>(null) }
+    var confirmDelete by remember { mutableStateOf<Announcement?>(null) }
+    val open = rememberOpenSections(runId)
 
     fun resetMarks(d: TrainerClassDetail, key: String) {
         present = d.roster.filter { key in it.present }.map { it.email }.toSet()
@@ -144,59 +155,157 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     }
     LaunchedEffect(runId) { load() }
 
+    fun announce(work: suspend () -> List<Announcement>, after: () -> Unit = {}) {
+        scope.launch {
+            posting = true; postProblem = null
+            try {
+                val list = work()
+                detail = detail?.copy(announcements = list)
+                after()
+            } catch (e: Exception) {
+                postProblem = e.message
+            } finally {
+                posting = false
+            }
+        }
+    }
+
     ScreenScaffold(title = title, onBack = onBack) { padding ->
         Refreshable({ load() }, Modifier.padding(padding)) {
             Column(
-                Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 val d = detail
                 when {
                     d != null -> {
-                        TrainerOverview(d) { openUrl(context, d.virtualLink) }
-                        TakeAttendanceCard(
-                            d, session, present, dirty, saving,
-                            onSession = { session = it; resetMarks(d, it) },
-                            onToggle = { email, on -> present = if (on) present + email else present - email; dirty = true },
-                            onMarkAll = { present = d.roster.map { it.email }.toSet(); dirty = true },
-                            onQr = { showQr = true },
-                            onSave = {
-                                scope.launch {
-                                    saving = true
-                                    try {
-                                        val records = d.roster.map { r -> Triple(r.email, r.name, r.email in present) }
-                                        notice = vm.saveAttendance(runId, session, records)
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        load()
-                                    } catch (e: Exception) {
-                                        notice = e.message
-                                    } finally {
-                                        saving = false
-                                    }
-                                }
+                        ClassSummaryCard(
+                            d.title, d.sku, d.classId,
+                            buildList {
+                                add("Teaching" to Theme.accent)
+                                if (d.bucket == "current") add("In progress" to Theme.success)
                             },
-                        )
-                        MaterialsList("Class materials", (d.materials + d.documents).filter { it.url.isNotEmpty() },
-                            "No materials are linked to this course yet.") { openDocument(context, push, it.title, it.url) }
-                        InfoCard {
-                            SectionLabel("Course feedback")
-                            Spacer(Modifier.height(8.dp))
-                            val n = d.surveyResponses
-                            val total = d.roster.size
-                            IconLine(
-                                Icons.Filled.RateReview,
-                                if (n == 0) "No feedback submitted yet" else "$n of $total learner${if (total == 1) "" else "s"} gave feedback",
-                                color = if (n == 0) Theme.secondaryText else Theme.ink,
-                                fontSize = 15, iconTint = if (n == 0) Theme.secondaryText else Theme.ink,
+                            d.startDate, d.endDate, d.startTime, d.endTime, d.mode, d.venue, d.room, "", d.roster.size, d.virtualLink,
+                        ) { openUrl(context, d.virtualLink) }
+
+                        FoldCard(
+                            "E-Attendance", Icons.Filled.CheckCircle, "E-Attendance" in open.value, { open.toggle("E-Attendance") },
+                            trailing = if (d.roster.isNotEmpty()) "${present.size}/${d.roster.size}" else null,
+                        ) {
+                            TakeAttendanceContent(
+                                d, session, present, dirty, saving,
+                                onSession = { session = it; resetMarks(d, it) },
+                                onToggle = { email, on -> present = if (on) present + email else present - email; dirty = true },
+                                onMarkAll = { present = d.roster.map { it.email }.toSet(); dirty = true },
+                                onQr = {
+                                    qr = QrLink(
+                                        "Check-in QR", d.checkinUrl, d.currentSessionLabel,
+                                        "Learners scan this with their phone camera to check in to this session.", "Share Check-in Link", "checkinQr",
+                                    )
+                                },
+                                onSave = {
+                                    scope.launch {
+                                        saving = true
+                                        try {
+                                            val records = d.roster.map { r -> Triple(r.email, r.name, r.email in present) }
+                                            notice = vm.saveAttendance(runId, session, records)
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            load()
+                                        } catch (e: Exception) {
+                                            notice = e.message
+                                        } finally {
+                                            saving = false
+                                        }
+                                    }
+                                },
                             )
-                            if (d.feedbackUrl.isNotEmpty()) {
-                                Spacer(Modifier.height(8.dp))
-                                TonalButton("Show Course Survey QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("showSurveyQR")) {
-                                    surveyQr = SurveyLink("Course Survey", d.feedbackUrl, "Learners scan this to give their course feedback.")
+                        }
+                        FoldCard(
+                            "Announcements", Icons.Filled.Campaign, "Announcements" in open.value, { open.toggle("Announcements") },
+                            trailing = d.announcements.size.takeIf { it > 0 }?.toString(),
+                            footer = "Learners see these posts on their class page in the app and on the website.",
+                        ) {
+                            OutlinedTextField(
+                                value = draft, onValueChange = { draft = it.take(5000) },
+                                placeholder = { Text("Write an announcement for this class…") },
+                                minLines = 3, maxLines = 8, shape = RoundedCornerShape(10.dp),
+                                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Theme.accent, unfocusedBorderColor = Theme.cardBorder),
+                                modifier = Modifier.fillMaxWidth().testTag("announcementText"),
+                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                postProblem?.let { Text(it, fontSize = 13.sp, color = Theme.danger, modifier = Modifier.weight(1f)) }
+                                    ?: Spacer(Modifier.weight(1f))
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    onClick = { announce({ vm.postAnnouncement(runId, draft) }) { draft = "" } },
+                                    enabled = !posting && draft.isNotBlank(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Theme.brand, contentColor = Color.White),
+                                    modifier = Modifier.testTag("announcementPost"),
+                                ) { Text(if (posting) "Posting…" else "Post", fontWeight = FontWeight.SemiBold) }
+                            }
+                            HorizontalDivider(color = Theme.cardBorder)
+                            AnnouncementList(
+                                d.announcements,
+                                openFile = { openDocument(context, push, it.fileName.ifBlank { "Attachment" }, it.fileUrl) },
+                                onDelete = { confirmDelete = it },
+                            )
+                        }
+                        FoldCard("Virtual Class Link", Icons.Filled.Videocam, "Virtual Class Link" in open.value, { open.toggle("Virtual Class Link") }) {
+                            VirtualClassContent(d.mode, d.virtualLink) { openUrl(context, d.virtualLink) }
+                        }
+                        FoldCard(
+                            "Courseware", Icons.Filled.Folder, "Courseware" in open.value, { open.toggle("Courseware") },
+                            footer = "Trainer and learner courseware. Documents open inside the app.",
+                        ) {
+                            MaterialRows((d.materials + d.documents).filter { it.url.isNotEmpty() }, "No materials are linked to this course yet.") {
+                                openDocument(context, push, it.title, it.url)
+                            }
+                        }
+                        FoldCard(
+                            "Lesson", Icons.Filled.School, "Lesson" in open.value, { open.toggle("Lesson") },
+                            footer = "Show a quiz's QR code to the class. Learners scan it to take the quiz; their scores are saved to this class.",
+                        ) {
+                            LessonContent(
+                                d.lesson,
+                                openLink = { link ->
+                                    if (link.type == "video") openUrl(context, link.url) else openDocument(context, push, link.title, link.url)
+                                },
+                                quizRow = { link ->
+                                    LinkRow(
+                                        Icons.Filled.QrCode2, link.title.ifBlank { "Quiz" },
+                                        subtitle = questionCount(link.questions) + if (link.url.isEmpty()) " · no QR link for this class" else "",
+                                        trailingText = if (link.url.isNotEmpty()) "Show QR" else "", tag = "quizQr-${link.quizId}",
+                                    ) {
+                                        if (link.url.isNotEmpty()) qr = QrLink(
+                                            link.title.ifBlank { "Quiz" }, link.url, questionCount(link.questions),
+                                            "Learners scan this with their phone camera to take the quiz.", "Share Quiz Link", "quizQr",
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                        d.practiceExam?.let { pe ->
+                            FoldCard("Practice Exam", Icons.Filled.Quiz, "Practice Exam" in open.value, { open.toggle("Practice Exam") }) {
+                                PracticeExamContent(pe, openSite = { openUrl(context, pe.examUrl) }) {
+                                    qr = QrLink(
+                                        "Practice Exam", pe.selfRegisterUrl, if (pe.examCode.isNotEmpty()) "Exam code ${pe.examCode}" else "",
+                                        "Learners scan this to register for the practice exam of this class.", "Share Register Link", "practiceExamQr",
+                                    )
                                 }
                             }
-                            Spacer(Modifier.height(8.dp))
-                            Text("Learners give feedback in this app from the first day of class.", fontSize = 12.sp, color = Theme.secondaryText)
+                        }
+                        FoldCard("Course Feedback Summary", Icons.Filled.BarChart, "Course Feedback Summary" in open.value, { open.toggle("Course Feedback Summary") }) {
+                            val summary = d.feedbackSummary
+                            if (summary != null && summary.count > 0) {
+                                FeedbackSummaryView(summary)
+                            } else {
+                                val n = d.surveyResponses
+                                val total = d.roster.size
+                                Text(
+                                    if (n == 0) "No feedback yet for this class." else "$n of $total learner${if (total == 1) "" else "s"} gave feedback.",
+                                    fontSize = 14.sp, color = Theme.secondaryText,
+                                )
+                            }
                         }
                     }
                     error != null -> ErrorCard(error!!) { scope.launch { load() } }
@@ -214,27 +323,47 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
             text = { Text(msg) },
         )
     }
-    val d = detail
-    if (showQr && d != null && d.checkinUrl.isNotEmpty()) {
-        QrSheet(
-            heading = "Check-in QR", link = d.checkinUrl, title = d.title, sessionLabel = d.currentSessionLabel,
-            hint = "Learners scan this with their phone camera to check in to this session.",
-            shareLabel = "Share Check-in Link", tag = "checkinQr",
-        ) { showQr = false }
+    confirmDelete?.let { a ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text("Delete this post?") },
+            text = { Text("Learners will no longer see it.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDelete = null; announce({ vm.deleteAnnouncement(runId, a.id) }) }, modifier = Modifier.testTag("confirmDeletePost")) {
+                    Text("Delete post", color = Theme.danger)
+                }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
+        )
     }
-    surveyQr?.let { s ->
-        QrSheet(
-            heading = s.title, link = s.url, title = d?.title.orEmpty(), sessionLabel = "",
-            hint = s.hint, shareLabel = "Share Link", tag = "surveyQr",
-        ) { surveyQr = null }
+    val d = detail
+    qr?.let { link ->
+        if (link.url.isNotEmpty()) QrSheet(
+            heading = link.heading, link = link.url, title = d?.title.orEmpty(), sessionLabel = link.caption,
+            hint = link.hint, shareLabel = link.shareLabel, tag = link.tag,
+        ) { qr = null }
     }
 }
 
-/** A survey the trainer shows the class as a QR code. */
-private data class SurveyLink(val title: String, val url: String, val hint: String)
+/** A link the trainer shows the class as a QR code (check-in, a lesson quiz, the practice exam). */
+private data class QrLink(val heading: String, val url: String, val caption: String, val hint: String, val shareLabel: String, val tag: String)
+
+/** The course's practice exam: its code, whether self-registration is open, and the register QR. */
+@Composable
+private fun PracticeExamContent(pe: PracticeExam, openSite: () -> Unit, showQr: () -> Unit) {
+    if (pe.examCode.isNotEmpty()) LabeledValue("Exam code", pe.examCode, fontSize = 15, weight = FontWeight.SemiBold, color = Theme.ink)
+    Text(
+        if (pe.open) "Self-registration is open for this class." else "Self-registration is closed for this class.",
+        fontSize = 14.sp, color = if (pe.open) Theme.success else Theme.secondaryText,
+    )
+    if (pe.selfRegisterUrl.isNotEmpty()) {
+        TonalButton("Show Self-register QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("practiceExamQR"), onClick = showQr)
+    }
+    if (pe.examUrl.isNotEmpty()) LinkRow(Icons.Filled.Public, "Open the practice exam site", subtitle = pe.examUrl, external = true, onClick = openSite)
+}
 
 /**
- * The check-in link or a survey link as a QR code for learners to scan: a full-screen
+ * A link as a QR code for learners to scan (check-in, a lesson quiz, the practice exam): a full-screen
  * sheet with the class title, the session, the code, a hint and a button that shares the link.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -281,34 +410,7 @@ private fun QrSheet(
 }
 
 @Composable
-private fun TrainerOverview(d: TrainerClassDetail, join: () -> Unit) {
-    InfoCard {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            StatusChip("Teaching", Theme.accent)
-            if (d.bucket == "current") StatusChip("In progress", Theme.success)
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(d.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 28.sp)
-        Spacer(Modifier.height(6.dp))
-        Text(listOf(d.classId, d.sku).filter { it.isNotEmpty() }.joinToString(" · "), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
-        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Theme.cardBorder)
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            IconLine(Icons.Filled.Event, Fmt.range(d.startDate, d.endDate), fontSize = 15, iconTint = Theme.ink)
-            if (d.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(d.startTime, d.endTime), fontSize = 15, iconTint = Theme.ink)
-            if (d.mode.isNotEmpty()) IconLine(modeIcon(d.mode), d.mode, fontSize = 15, iconTint = Theme.ink)
-            val place = listOf(d.room, d.venue).filter { it.isNotEmpty() }
-            if (place.isNotEmpty()) IconLine(Icons.Filled.Place, place.joinToString("\n"), fontSize = 15, iconTint = Theme.ink)
-            IconLine(Icons.Filled.Groups, "${d.roster.size} learner${if (d.roster.size == 1) "" else "s"}", fontSize = 15, iconTint = Theme.ink)
-        }
-        if (d.virtualLink.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton("Join Online Class", Icons.Filled.Videocam, onClick = join)
-        }
-    }
-}
-
-@Composable
-private fun TakeAttendanceCard(
+private fun TakeAttendanceContent(
     d: TrainerClassDetail,
     session: String,
     present: Set<String>,
@@ -323,7 +425,7 @@ private fun TakeAttendanceCard(
     val open = d.attendanceOpen
     fun label(s: ClassSession) = s.label + if (s.key == d.currentSession) " (now)" else ""
 
-    InfoCard {
+    Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionLabel("Take attendance", Modifier.weight(1f))
             if (d.roster.isNotEmpty()) {
@@ -417,23 +519,22 @@ private fun TakeAttendanceCard(
     }
 }
 
-/** A titled list of documents that open in the in-app viewer (shared with the learner class screen). */
+/** The class's documents, opened in the in-app viewer (shared with the learner class page). */
 @Composable
-fun MaterialsList(label: String, all: List<Material>, empty: String, open: (Material) -> Unit) {
-    InfoCard {
-        SectionLabel(label)
-        Spacer(Modifier.height(6.dp))
-        if (all.isEmpty()) {
-            Text(empty, fontSize = 15.sp, color = Theme.secondaryText, modifier = Modifier.padding(vertical = 6.dp))
-        }
+fun MaterialRows(all: List<Material>, empty: String, open: (Material) -> Unit) {
+    if (all.isEmpty()) {
+        Text(empty, fontSize = 14.sp, color = Theme.secondaryText)
+        return
+    }
+    Column {
         all.forEachIndexed { i, m ->
             Row(
-                Modifier.fillMaxWidth().clickable { open(m) }.padding(vertical = 12.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { open(m) }.padding(vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(materialIcon(m), contentDescription = null, tint = Theme.ink, modifier = Modifier.size(22.dp))
+                Icon(materialIcon(m), contentDescription = null, tint = Theme.accent, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(12.dp))
-                Text(m.title, fontSize = 16.sp, color = Theme.ink, modifier = Modifier.weight(1f))
+                Text(m.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink, modifier = Modifier.weight(1f))
                 Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText, modifier = Modifier.size(20.dp))
             }
             if (i < all.lastIndex) HorizontalDivider(color = Theme.cardBorder)
@@ -467,7 +568,7 @@ fun QrCode(text: String, modifier: Modifier = Modifier, description: String = "C
 
 /** Loads a tab's data once (it is kept in the view model), with pull-to-refresh and a retry card. */
 @Composable
-private fun <T> LoadedTab(
+internal fun <T> LoadedTab(
     data: T?, key: Any, load: suspend () -> Unit, header: @Composable () -> Unit = {},
     /** Set for a tab that reloads every time it is shown: drops what is on screen before the load. */
     resetOnShow: (() -> Unit)? = null,

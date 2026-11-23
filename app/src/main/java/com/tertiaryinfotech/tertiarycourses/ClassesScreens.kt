@@ -1,5 +1,14 @@
 package com.tertiaryinfotech.tertiarycourses
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material.icons.filled.School
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -33,7 +42,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
@@ -52,7 +60,6 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.RateReview
-import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.Star
@@ -78,12 +85,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -121,7 +126,7 @@ fun Refreshable(onRefresh: suspend () -> Unit, modifier: Modifier = Modifier, co
 /**
  * Top of the home tab (the staff Dashboard, or My Classes), in the TIA house layout: a
  * "Welcome back" card with the name, the role and a My Profile link (the whole card opens
- * Account), then (for the owner account only) a "View as" row to switch role.
+ * Account), then, for an account that holds more than one role, a "View as" row to switch role.
  */
 @Composable
 fun HomeHeader(vm: AppViewModel) {
@@ -199,11 +204,16 @@ private fun ShrinkingName(name: String, color: Color) {
 fun ClassesScreen(vm: AppViewModel, push: (Route) -> Unit) {
     val classes = vm.classes
     val bucket = vm.bucket ?: Bucket.CURRENT
+    var query by rememberSaveable { mutableStateOf("") }
+    fun matches(c: ClassItem): Boolean {
+        val q = query.trim()
+        return q.isEmpty() || listOf(c.title, c.sku, c.classId).any { it.contains(q, ignoreCase = true) }
+    }
     fun items(b: Bucket) = when (b) {
         Bucket.CURRENT -> classes?.current
         Bucket.UPCOMING -> classes?.upcoming
         Bucket.PAST -> classes?.past
-    } ?: emptyList()
+    }.orEmpty().filter(::matches)
     val scope = rememberCoroutineScope()
 
     ScreenScaffold { padding ->
@@ -213,8 +223,9 @@ fun ClassesScreen(vm: AppViewModel, push: (Route) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                if (vm.staffRole == null) item { HomeHeader(vm) }
-                item {
+                item(key = "search") { SearchField(query, "Find your course", Modifier.testTag("findCourse")) { query = it } }
+                if (vm.staffRole == null) item(key = "header") { HomeHeader(vm) }
+                item(key = "buckets") {
                     BucketPicker(bucket, count = { items(it).size }) { vm.bucket = it }
                 }
                 val err = vm.loadError
@@ -223,11 +234,14 @@ fun ClassesScreen(vm: AppViewModel, push: (Route) -> Unit) {
                         if (err != null) ErrorCard(err) { scope.launch { vm.refreshClasses() } }
                         else LoadingBox("Loading your classes…")
                     }
+                    items(bucket).isEmpty() && query.isNotBlank() -> item {
+                        EmptyState(Icons.Filled.SearchOff, "No matching classes", "No ${bucket.label.lowercase()} class matches “${query.trim()}”. Search by course title or course code.")
+                    }
                     items(bucket).isEmpty() -> item {
                         EmptyState(Icons.Filled.EventBusy, emptyTitle(bucket), emptyText(bucket, vm.isTrainer))
                     }
                     else -> items(items(bucket), key = { it.id }) { item ->
-                        ClassCard(item, showRole = vm.isTrainer, onClick = classRoute(item)?.let { r -> { push(r) } })
+                        ClassCard(item, onClick = classRoute(item)?.let { r -> { push(r) } })
                     }
                 }
             }
@@ -287,40 +301,48 @@ fun classRoute(item: ClassItem): Route? = when {
 
 fun modeIcon(mode: String): ImageVector = if (mode == "Live Online") Icons.Filled.Videocam else Icons.Filled.Apartment
 
+/** Teaching / In progress / Pending payment (and the certificate and feedback marks) for a class card or page. */
+fun classChips(item: ClassItem): List<Pair<String, Color>> = buildList {
+    if (item.isTeaching) add("Teaching" to Theme.accent)
+    if (item.isPendingPayment) add("Pending payment" to Theme.warning)
+    else if (item.bucket == "current") add("In progress" to Theme.success)
+    if (item.certificate != null) add("Certificate issued" to Theme.accent)
+    if (item.surveySubmitted) add("Feedback done" to Theme.success)
+}
+
+/**
+ * A class in My Classes and the calendar, in the TIA layout: course code; chips; title; date
+ * range; the mode only for Live Online or Hybrid; the venue address; learners or the trainer.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ClassCard(item: ClassItem, showRole: Boolean = false, onClick: (() -> Unit)?) {
-    InfoCard(modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier) {
-        Row(verticalAlignment = Alignment.Top) {
-            CourseThumb(item.imageUrl)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(item.classId.ifEmpty { item.sku }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1)
-                    // Trainers see which classes they teach and which they attend.
-                    if (showRole) StatusChip(if (item.isTeaching) "Teaching" else "Attending", if (item.isTeaching) Theme.accent else Theme.secondaryText)
-                    if (item.isPendingPayment) StatusChip("Pending payment", Theme.warning)
-                    else if (item.bucket == "current") StatusChip("In progress", Theme.success)
-                }
-                Text(item.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp)
-            }
-            if (onClick != null) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText)
+fun ClassCard(item: ClassItem, onClick: (() -> Unit)?) {
+    InfoCard(modifier = (if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).testTag("classCard-${item.id}")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                item.sku.ifEmpty { item.classId }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent,
+                maxLines = 1, modifier = Modifier.weight(1f),
+            )
+            if (onClick != null) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText, modifier = Modifier.size(20.dp))
         }
-        Spacer(Modifier.height(10.dp))
+        val chips = classChips(item)
+        if (chips.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                chips.forEach { (text, color) -> StatusChip(text, color) }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(item.title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp, color = Theme.ink)
+        Spacer(Modifier.height(8.dp))
         Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
             IconLine(Icons.Filled.Event, Fmt.range(item.startDate, item.endDate), color = Theme.secondaryText, iconTint = Theme.tertiaryText)
-            if (item.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(item.startTime, item.endTime), color = Theme.secondaryText, iconTint = Theme.tertiaryText)
-            if (item.mode.isNotEmpty()) IconLine(modeIcon(item.mode), item.mode, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
+            if (showsMode(item.mode)) IconLine(modeIcon(item.mode), item.mode, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
+            if (item.venue.isNotEmpty()) IconLine(Icons.Filled.Place, item.venue, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
             if (item.isTeaching) {
                 item.learnerCount?.let { n -> IconLine(Icons.Filled.Groups, "$n learner${if (n == 1) "" else "s"}", color = Theme.secondaryText, iconTint = Theme.tertiaryText) }
             } else if (item.trainer.isNotEmpty()) {
                 IconLine(Icons.Filled.Person, item.trainer, color = Theme.secondaryText, iconTint = Theme.tertiaryText)
-            }
-        }
-        if (item.certificate != null || item.surveySubmitted) {
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (item.certificate != null) StatusChip("Certificate issued", Theme.accent)
-                if (item.surveySubmitted) StatusChip("Feedback done", Theme.success)
             }
         }
         if (item.isPendingPayment) {
@@ -330,8 +352,13 @@ fun ClassCard(item: ClassItem, showRole: Boolean = false, onClick: (() -> Unit)?
     }
 }
 
-// ── Class detail ──
+// ── Class page (learner) ──
 
+/**
+ * The learner's class page, as the website's: the summary card, then E-Attendance,
+ * Announcements, Virtual Class Link, Courseware, Lesson, Course Survey and Certificate,
+ * each a collapsible card that starts collapsed.
+ */
 @Composable
 fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route) -> Unit, onBack: () -> Unit) {
     val context = LocalContext.current
@@ -341,6 +368,7 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
     var error by remember { mutableStateOf<String?>(null) }
     var checkingIn by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
+    val open = rememberOpenSections(runId)
 
     suspend fun load() {
         try {
@@ -355,32 +383,78 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
         Refreshable({ load() }, Modifier.padding(padding)) {
             Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 val d = detail
                 when {
                     d != null -> {
-                        Overview(d) { openUrl(context, d.virtualLink) }
-                        AttendanceCard(d, checkingIn) {
-                            scope.launch {
-                                checkingIn = true
-                                try {
-                                    notice = vm.markAttendance(runId)
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    load()
-                                } catch (e: Exception) {
-                                    notice = e.message
-                                } finally {
-                                    checkingIn = false
+                        val item = vm.classes?.all?.firstOrNull { it.runId == runId && !it.isTeaching }
+                        ClassSummaryCard(
+                            d.title, d.sku, d.classId,
+                            buildList {
+                                if (d.bucket == "current") add("In progress" to Theme.success)
+                                if (item?.isPendingPayment == true) add("Pending payment" to Theme.warning)
+                            },
+                            d.startDate, d.endDate, d.startTime, d.endTime, d.mode, d.venue, d.room, d.trainer, null, d.virtualLink,
+                        ) { openUrl(context, d.virtualLink) }
+
+                        val a = d.attendance
+                        FoldCard(
+                            "E-Attendance", Icons.Filled.CheckCircle, "E-Attendance" in open.value, { open.toggle("E-Attendance") },
+                            trailing = if (a.sessionsTotal > 0) "${a.sessionsPresent}/${a.sessionsTotal}" else null,
+                        ) {
+                            AttendanceContent(d, checkingIn) {
+                                scope.launch {
+                                    checkingIn = true
+                                    try {
+                                        notice = vm.markAttendance(runId)
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        load()
+                                    } catch (e: Exception) {
+                                        notice = e.message
+                                    } finally {
+                                        checkingIn = false
+                                    }
                                 }
                             }
                         }
-                        MaterialsList("Class materials", (d.materials + d.documents).filter { it.url.isNotEmpty() },
-                            "Your trainer will share the materials for this class here.") { openDocument(context, push, it.title, it.url) }
-                        if (d.quizzes.isNotEmpty()) QuizzesCard(d.quizzes) { push(Route.Quiz(runId, it.quizId, it.title)) }
-                        SurveyCard(d, openExternal = { openUrl(context, d.survey.externalUrl) }) { push(Route.Survey(runId)) }
-                        CertificateCard(d) { openDocument(context, push, "Certificate", it.url) }
-                        SessionsCard(d)
+                        FoldCard(
+                            "Announcements", Icons.Filled.Campaign, "Announcements" in open.value, { open.toggle("Announcements") },
+                            trailing = d.announcements.size.takeIf { it > 0 }?.toString(),
+                        ) {
+                            AnnouncementList(d.announcements, openFile = { openDocument(context, push, it.fileName.ifBlank { "Attachment" }, it.fileUrl) })
+                        }
+                        FoldCard("Virtual Class Link", Icons.Filled.Videocam, "Virtual Class Link" in open.value, { open.toggle("Virtual Class Link") }) {
+                            VirtualClassContent(d.mode, d.virtualLink) { openUrl(context, d.virtualLink) }
+                        }
+                        val courseware = (d.materials + d.documents).filter { it.url.isNotEmpty() }
+                        FoldCard(
+                            "Courseware", Icons.Filled.Folder, "Courseware" in open.value, { open.toggle("Courseware") },
+                            footer = "Documents open inside the app.",
+                        ) {
+                            MaterialRows(courseware, "Your trainer will share the materials for this class here.") { openDocument(context, push, it.title, it.url) }
+                        }
+                        FoldCard("Lesson", Icons.Filled.School, "Lesson" in open.value, { open.toggle("Lesson") }) {
+                            val openQuiz: (Int, String) -> Unit = { id, t -> push(Route.Quiz(runId, id, t)) }
+                            if (d.lesson.isEmpty() && d.quizzes.isNotEmpty()) {
+                                // A site that predates the Lesson list still sends the class's quizzes.
+                                d.quizzes.forEach { q -> LearnerQuizRow(q.quizId, q.title, q.questions, q.previous, openQuiz) }
+                            } else {
+                                LessonContent(
+                                    d.lesson,
+                                    openLink = { link ->
+                                        if (link.type == "video") openUrl(context, link.url) else openDocument(context, push, link.title, link.url)
+                                    },
+                                    quizRow = { link -> LearnerQuizRow(link.quizId, link.title, link.questions, link.previous, openQuiz) },
+                                )
+                            }
+                        }
+                        FoldCard("Course Survey", Icons.Filled.RateReview, "Course Survey" in open.value, { open.toggle("Course Survey") }) {
+                            SurveyContent(d, openExternal = { openUrl(context, d.survey.externalUrl) }) { push(Route.Survey(runId)) }
+                        }
+                        FoldCard("Certificate", Icons.Filled.WorkspacePremium, "Certificate" in open.value, { open.toggle("Certificate") }) {
+                            CertificateContent(d) { openDocument(context, push, "Certificate", it.url) }
+                        }
                     }
                     error != null -> ErrorCard(error!!) { scope.launch { load() } }
                     else -> LoadingBox()
@@ -399,52 +473,41 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
     }
 }
 
+/** Check in, the sessions with a tick for each one attended, and "Attended x of y". */
 @Composable
-private fun Overview(d: ClassDetail, join: () -> Unit) {
-    InfoCard {
-        Text(d.title, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 28.sp)
-        Spacer(Modifier.height(6.dp))
-        Text(listOf(d.classId, d.sku).filter { it.isNotEmpty() }.joinToString(" · "), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
-        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Theme.cardBorder)
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            IconLine(Icons.Filled.Event, Fmt.range(d.startDate, d.endDate), fontSize = 15, iconTint = Theme.ink)
-            if (d.startTime.isNotEmpty()) IconLine(Icons.Filled.Schedule, Fmt.times(d.startTime, d.endTime), fontSize = 15, iconTint = Theme.ink)
-            if (d.mode.isNotEmpty()) IconLine(modeIcon(d.mode), d.mode, fontSize = 15, iconTint = Theme.ink)
-            val place = listOf(d.room, d.venue).filter { it.isNotEmpty() }
-            if (place.isNotEmpty()) IconLine(Icons.Filled.Place, place.joinToString("\n"), fontSize = 15, iconTint = Theme.ink)
-            if (d.trainer.isNotEmpty()) IconLine(Icons.Filled.Person, "Trainer: ${d.trainer}", fontSize = 15, iconTint = Theme.ink)
-        }
-        if (d.virtualLink.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton("Join Online Class", Icons.Filled.Videocam, onClick = join)
-        }
-    }
-}
-
-@Composable
-private fun AttendanceCard(d: ClassDetail, checkingIn: Boolean, checkIn: () -> Unit) {
+private fun AttendanceContent(d: ClassDetail, checkingIn: Boolean, checkIn: () -> Unit) {
     val a = d.attendance
-    InfoCard {
-        SectionLabel("Digital attendance")
-        Spacer(Modifier.height(10.dp))
-        when {
-            a.markedPresent -> IconLine(
-                Icons.Filled.CheckCircle, "You're checked in for ${a.currentSessionLabel}.",
-                color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
-            )
-            a.open -> {
-                Text("Check in for ${a.currentSessionLabel} when you arrive.", fontSize = 15.sp)
-                Spacer(Modifier.height(10.dp))
-                PrimaryButton("Check In Now", Icons.Filled.PanTool, busy = checkingIn, modifier = Modifier.testTag("checkIn"), onClick = checkIn)
-            }
-            else -> Text(
-                if (d.bucket == "upcoming") "Check-in opens on the first day of class." else "Check-in is closed for this class.",
-                fontSize = 15.sp, color = Theme.secondaryText,
-            )
+    when {
+        a.markedPresent -> IconLine(
+            Icons.Filled.CheckCircle, "You're checked in for ${a.currentSessionLabel}.",
+            color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
+        )
+        a.open -> {
+            Text("Check in for ${a.currentSessionLabel} when you arrive.", fontSize = 15.sp, color = Theme.ink)
+            PrimaryButton("Check In Now", Icons.Filled.PanTool, busy = checkingIn, modifier = Modifier.testTag("checkIn"), onClick = checkIn)
         }
-        Spacer(Modifier.height(10.dp))
-        Text("Attended ${a.sessionsPresent} of ${a.sessionsTotal} sessions", fontSize = 12.sp, color = Theme.secondaryText)
+        else -> Text(
+            if (d.bucket == "upcoming") "Check-in opens on the first day of class." else "Check-in is closed for this class.",
+            fontSize = 15.sp, color = Theme.secondaryText,
+        )
     }
+    if (d.sessions.isNotEmpty()) {
+        HorizontalDivider(color = Theme.cardBorder)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            d.sessions.forEach { s ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.label, fontSize = 15.sp, color = Theme.ink, modifier = Modifier.weight(1f))
+                    val (icon, tint, label) = when (s.present) {
+                        true -> Triple(Icons.Filled.CheckCircle, Theme.success, "Present")
+                        false -> Triple(Icons.Filled.HighlightOff, Theme.secondaryText, "Absent")
+                        null -> Triple(Icons.Filled.RadioButtonUnchecked, Theme.tertiaryText, "Not recorded")
+                    }
+                    Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
+                }
+            }
+        }
+    }
+    Text("Attended ${a.sessionsPresent} of ${a.sessionsTotal} sessions", fontSize = 13.sp, color = Theme.secondaryText)
 }
 
 fun materialIcon(m: Material): ImageVector = when (m.key) {
@@ -458,96 +521,47 @@ fun materialIcon(m: Material): ImageVector = when (m.key) {
     else -> Icons.Filled.Description
 }
 
-/** Quizzes the course developer added to the Lesson, with the learner's latest score. */
+/** A lesson quiz with the learner's latest score; Start or Retake opens it in the app. */
 @Composable
-private fun QuizzesCard(quizzes: List<QuizSummary>, open: (QuizSummary) -> Unit) {
-    InfoCard {
-        SectionLabel("Quizzes")
-        Spacer(Modifier.height(6.dp))
-        quizzes.forEachIndexed { i, q ->
-            val count = "${q.questions} question${if (q.questions == 1) "" else "s"}"
-            Row(
-                Modifier.fillMaxWidth().clickable(onClickLabel = if (q.previous == null) "Start quiz" else "Retake quiz") { open(q) }
-                    .padding(vertical = 12.dp).testTag("quiz-${q.quizId}"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    if (q.previous == null) Icons.Filled.Quiz else Icons.Filled.CheckCircle, contentDescription = null,
-                    tint = if (q.previous == null) Theme.brand else Theme.success, modifier = Modifier.size(22.dp),
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(q.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
-                    Text(
-                        q.previous?.let { "$count · your score ${it.score} / ${it.total}" } ?: count,
-                        fontSize = 13.sp, color = Theme.secondaryText,
-                    )
-                }
-                Text(if (q.previous == null) "Start" else "Retake", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.brand)
-            }
-            if (i < quizzes.lastIndex) HorizontalDivider(color = Theme.cardBorder)
-        }
-    }
+private fun LearnerQuizRow(quizId: Int, title: String, questions: Int, previous: QuizScore?, open: (Int, String) -> Unit) {
+    val count = questionCount(questions)
+    LinkRow(
+        if (previous == null) Icons.Filled.Quiz else Icons.Filled.CheckCircle,
+        title.ifBlank { "Quiz" },
+        subtitle = previous?.let { "$count · your score ${it.score} / ${it.total}" } ?: count,
+        trailingText = if (previous == null) "Start" else "Retake",
+        iconTint = if (previous == null) Theme.accent else Theme.success,
+        tag = "quiz-$quizId",
+    ) { open(quizId, title.ifBlank { "Quiz" }) }
 }
 
 @Composable
-private fun SurveyCard(d: ClassDetail, openExternal: () -> Unit, give: () -> Unit) {
+private fun SurveyContent(d: ClassDetail, openExternal: () -> Unit, give: () -> Unit) {
     val s = d.survey
-    InfoCard {
-        SectionLabel("Course feedback")
-        Spacer(Modifier.height(10.dp))
-        when {
-            s.submitted -> IconLine(Icons.Filled.Verified, s.message, color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold)
-            s.externalUrl.isNotEmpty() -> PrimaryButton("Open Feedback Form", Icons.Filled.EditNote, onClick = openExternal)
-            s.available -> {
-                Text("Tell us how the class went — it takes about a minute.", fontSize = 15.sp)
-                Spacer(Modifier.height(10.dp))
-                PrimaryButton("Give Feedback", Icons.Filled.RateReview, modifier = Modifier.testTag("giveFeedback"), onClick = give)
-            }
-            else -> Text(s.message, fontSize = 15.sp, color = Theme.secondaryText)
+    when {
+        s.submitted -> IconLine(Icons.Filled.Verified, s.message.ifEmpty { "Course feedback sent. Thank you." }, color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold)
+        s.externalUrl.isNotEmpty() -> PrimaryButton("Open Feedback Form", Icons.Filled.EditNote, onClick = openExternal)
+        s.available -> {
+            Text("Tell us how the class went. It takes about a minute.", fontSize = 15.sp, color = Theme.ink)
+            PrimaryButton("Give Feedback", Icons.Filled.RateReview, modifier = Modifier.testTag("giveFeedback"), onClick = give)
         }
+        else -> Text(s.message.ifEmpty { "The course survey opens on the first day of class." }, fontSize = 15.sp, color = Theme.secondaryText)
     }
 }
 
 @Composable
-private fun CertificateCard(d: ClassDetail, open: (CertificateInfo) -> Unit) {
-    InfoCard {
-        SectionLabel("Certificate")
-        Spacer(Modifier.height(10.dp))
-        val cert = d.certificate
-        if (cert != null && cert.url.isNotEmpty()) {
-            IconLine(Icons.Filled.WorkspacePremium, "${cert.name} · ${cert.certNo}", fontSize = 15, weight = FontWeight.SemiBold, iconTint = Theme.accent)
-            Spacer(Modifier.height(10.dp))
-            OutlineButton("View Certificate", Icons.Filled.Description) { open(cert) }
-        } else {
-            val rule = if (d.certificateRule.isNotEmpty()) " (attendance ${d.certificateRule})" else ""
-            Text(
-                if (d.bucket == "past") "Your certificate will appear here once it is issued$rule."
-                else "Your certificate is issued after the class when attendance requirements are met$rule.",
-                fontSize = 15.sp, color = Theme.secondaryText,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SessionsCard(d: ClassDetail) {
-    InfoCard {
-        SectionLabel("Sessions")
-        Spacer(Modifier.height(8.dp))
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            d.sessions.forEach { s ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(s.label, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                    val (icon, tint, label) = when (s.present) {
-                        true -> Triple(Icons.Filled.CheckCircle, Theme.success, "Present")
-                        false -> Triple(Icons.Filled.HighlightOff, Theme.secondaryText, "Absent")
-                        null -> Triple(Icons.Filled.RadioButtonUnchecked, Theme.tertiaryText, "Not recorded")
-                    }
-                    Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
-                }
-            }
-        }
+private fun CertificateContent(d: ClassDetail, open: (CertificateInfo) -> Unit) {
+    val cert = d.certificate
+    if (cert != null && cert.url.isNotEmpty()) {
+        IconLine(Icons.Filled.WorkspacePremium, "${cert.name} · ${cert.certNo}", fontSize = 15, weight = FontWeight.SemiBold, iconTint = Theme.accent, color = Theme.ink)
+        OutlineButton("View Certificate", Icons.Filled.Description) { open(cert) }
+    } else {
+        val rule = if (d.certificateRule.isNotEmpty()) " (attendance ${d.certificateRule})" else ""
+        Text(
+            if (d.bucket == "past") "Your certificate will appear here once it is issued$rule."
+            else "Your certificate is issued after the class when attendance requirements are met$rule.",
+            fontSize = 15.sp, color = Theme.secondaryText,
+        )
     }
 }
 

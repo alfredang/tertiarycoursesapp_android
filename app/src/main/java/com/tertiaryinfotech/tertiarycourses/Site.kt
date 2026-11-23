@@ -17,6 +17,8 @@ object Site {
     const val phone = "+65 6100 0613"
     const val whatsApp = "6588666375"
     const val whatsAppLabel = "+65 8866 6375"
+    /** The academy's address (Support tab; the site's own address from `GET support` wins). */
+    const val address = "12 Woodlands Square #07-85/86/87, Woods Square Tower 1, Singapore 737715"
     const val currency = "SGD"
     /** Class times from the site are local to it. */
     const val timeZone = "Asia/Singapore"

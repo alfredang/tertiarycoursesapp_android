@@ -1,5 +1,7 @@
 package com.tertiaryinfotech.tertiarycourses
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -8,6 +10,27 @@ import android.net.Uri
 import android.util.LruCache
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -47,9 +70,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,6 +119,8 @@ object Theme {
     val secondaryText get() = if (dark) Color(0xFFA4A8B2) else Color(0xFF6B6B72)
     val tertiaryText get() = if (dark) Color(0xFF737884) else Color(0xFFAEAEB4)
     val star get() = Color(0xFFFF9500)
+    /** Past class chips in the calendar. */
+    val muted get() = if (dark) Color(0xFF3A3E47) else Color(0xFFD6D6DC)
     val danger get() = if (dark) Color(0xFFFF7A70) else Color(0xFFD32F2F)
 }
 
@@ -374,6 +397,167 @@ fun LabeledValue(label: String, value: String, fontSize: Int = 14, weight: FontW
     }
 }
 
+// ── TIA house layout pieces (class page, homes, calendar, support) ──
+
+/** The class venue's address with a map pin; tapping opens it in Google Maps. */
+@Composable
+fun VenueLink(address: String, fontSize: Int = 15, showHint: Boolean = true) {
+    val context = LocalContext.current
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+            .clickable(role = Role.Button, onClickLabel = "Open in Google Maps") { openUrl(context, mapsUrl(address)) }
+            .testTag("venueMap"),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(Icons.Filled.Place, contentDescription = null, tint = Theme.accent, modifier = Modifier.padding(top = 1.dp).size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(address, fontSize = fontSize.sp, lineHeight = (fontSize + 5).sp, color = Theme.ink)
+            if (showHint) Text("Open in Google Maps", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+        }
+    }
+}
+
+/**
+ * A website-style section card: a tappable title row with an icon and a chevron; the
+ * content shows only when [open]. Every section of the class page starts collapsed.
+ */
+@Composable
+fun FoldCard(
+    title: String,
+    icon: ImageVector,
+    open: Boolean,
+    onToggle: () -> Unit,
+    footer: String? = null,
+    trailing: String? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        InfoCard(padding = 0.dp) {
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onToggle)
+                    .semantics { stateDescription = if (open) "Expanded" else "Collapsed" }
+                    .heightIn(min = 56.dp).padding(horizontal = 16.dp, vertical = 12.dp).testTag("section-$title"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(icon, contentDescription = null, tint = Theme.accent, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, lineHeight = 22.sp, color = Theme.ink, modifier = Modifier.weight(1f))
+                if (trailing != null) {
+                    Text(trailing, fontSize = 13.sp, color = Theme.secondaryText, modifier = Modifier.padding(end = 6.dp))
+                }
+                Icon(
+                    Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = Theme.accent,
+                    modifier = Modifier.rotate(if (open) 180f else 0f),
+                )
+            }
+            if (open) {
+                HorizontalDivider(color = Theme.cardBorder)
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+            }
+        }
+        if (open && footer != null) {
+            Text(footer, fontSize = 12.sp, lineHeight = 17.sp, color = Theme.secondaryText, modifier = Modifier.padding(horizontal = 4.dp))
+        }
+    }
+}
+
+/** A tappable row inside a section: icon, title (and subtitle), and an open-in or chevron mark. */
+@Composable
+fun LinkRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String? = null,
+    external: Boolean = false,
+    trailingText: String? = null,
+    iconTint: Color = Theme.accent,
+    tag: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(role = Role.Button, onClick = onClick)
+            .heightIn(min = 44.dp).padding(vertical = 4.dp).then(if (tag != null) Modifier.testTag(tag) else Modifier),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, lineHeight = 20.sp, color = Theme.ink)
+            if (!subtitle.isNullOrBlank()) Text(subtitle, fontSize = 12.sp, lineHeight = 16.sp, color = Theme.secondaryText)
+        }
+        Spacer(Modifier.width(8.dp))
+        when {
+            trailingText != null -> Text(trailingText, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+            external -> Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = Theme.tertiaryText, modifier = Modifier.size(18.dp))
+            else -> Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Theme.tertiaryText)
+        }
+    }
+}
+
+/** A rounded search field with a magnifier, used above lists. */
+@Composable
+fun SearchField(query: String, hint: String, modifier: Modifier = Modifier, onQuery: (String) -> Unit) {
+    OutlinedTextField(
+        value = query, onValueChange = { onQuery(it.take(100)) },
+        placeholder = { Text(hint, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+        trailingIcon = {
+            if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, contentDescription = "Clear search") }
+        },
+        singleLine = true, shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = Theme.accent, unfocusedBorderColor = Theme.cardBorder,
+            focusedContainerColor = Theme.card, unfocusedContainerColor = Theme.card,
+        ),
+        modifier = modifier.fillMaxWidth().testTag("searchField"),
+    )
+}
+
+/** A segmented picker (Current / Upcoming, All / With classes / Disabled): the chosen one brand-filled. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun Segments(labels: List<String>, selected: Int, tag: String = "segments", onPick: (Int) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().testTag(tag)) {
+        labels.forEachIndexed { i, label ->
+            SegmentedButton(
+                selected = selected == i, onClick = { onPick(i) }, shape = SegmentedButtonDefaults.itemShape(i, labels.size), icon = {},
+                colors = SegmentedButtonDefaults.colors(
+                    activeContainerColor = Theme.brand, activeContentColor = Color.White, activeBorderColor = Theme.brand,
+                    inactiveContainerColor = Theme.field, inactiveContentColor = Theme.ink, inactiveBorderColor = Theme.cardBorder,
+                ),
+                modifier = Modifier.testTag("$tag-$i"),
+            ) {
+                Text(
+                    label, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontWeight = if (selected == i) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
+        }
+    }
+}
+
+/** Three figures side by side (Running today / Next 30 days / Learners today). The last one is brand-coloured. */
+@Composable
+fun KpiTiles(vararg tiles: Pair<String, String>) {
+    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        tiles.forEachIndexed { i, (label, value) ->
+            Column(
+                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(14.dp)).background(Theme.card)
+                    .border(1.dp, Theme.cardBorder, RoundedCornerShape(14.dp)).padding(vertical = 12.dp, horizontal = 6.dp)
+                    .semantics(mergeDescendants = true) { },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    value, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1, lineHeight = 28.sp,
+                    color = if (i == tiles.lastIndex) Theme.accent else Theme.ink,
+                )
+                Text(label, fontSize = 12.sp, color = Theme.secondaryText, textAlign = TextAlign.Center, lineHeight = 15.sp)
+            }
+        }
+    }
+}
+
 // ── Remote images (tiny OkHttp loader; no extra image library) ──
 
 private object ImageCache {
@@ -430,6 +614,10 @@ fun openUrl(context: Context, url: String) {
         Toast.makeText(context, "No app can open this link.", Toast.LENGTH_SHORT).show()
     }
 }
+
+/** Google Maps search for an address (opens the Maps app when installed). */
+fun mapsUrl(address: String): String =
+    "https://www.google.com/maps/search/?api=1&query=" + Uri.encode(address.trim())
 
 fun whatsAppUrl(number: String, body: String): String =
     "https://wa.me/$number?text=" + Uri.encode(body)

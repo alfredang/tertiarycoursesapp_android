@@ -24,7 +24,7 @@ features and the deep-blue (`#0B3D8E`) house design in light and dark.
   course detail with *View Schedule & Register* and *Enquire via WhatsApp*. Works offline from a
   cached copy or the bundled snapshot.
 
-**Signed in** — bottom navigation: My Classes · Calendar · Certificates · Billing · Account
+**Signed in** — bottom navigation by role (switch with *View as* when the account holds several): Learner: My Classes · Calendar · Certificates · Support · Account (Billing is in Account). Trainer: My Classes · Calendar · Payout · Hours · Account. Admin: Home · Calendar · Courses · Account. Developer, Marketing, Franchise Admin: Home · Courses · Account
 - **My Classes** — Current / Upcoming / Past, reloaded when the app returns to the foreground. A
   trainer sees the classes they teach and attend together, tagged **Teaching** / **Attending**.
 - **Class detail (learner)** — **Check In Now** (digital attendance), class materials, **Quizzes**
@@ -96,14 +96,16 @@ app/src/main/java/com/tertiaryinfotech/tertiarycourses/
 ├── MainActivity.kt    # Activity, signed-out / signed-in bottom navigation, routing
 ├── Ui.kt              # Theme (light / dark palette), brand header, cards, buttons, image loader, intents
 ├── SignInScreen.kt    # Email code / password sign-in
-├── ClassesScreens.kt  # My Classes, class detail (check-in, materials, certificate), survey
+├── ClassesScreens.kt  # My Classes, learner class page (sections), survey, quiz
+├── ClassPage.kt       # Class page pieces: summary card, announcements, lesson, feedback summary
+├── StaffScreens.kt    # Admin Home, Developer Home, Admin Calendar
 ├── LearnerScreens.kt  # Calendar, Certificates, Billing, Account
 ├── TrainerScreens.kt  # Trainer class: take attendance, check-in QR, courseware
 ├── ProfileScreens.kt  # Edit Profile, Appearance, Class reminders switch, notification permission
 ├── DocumentViewer.kt  # In-app PDF (PdfRenderer) and web (WebView) document viewer
 ├── Reminders.kt       # Local class reminders (alarms, boot receiver) and device settings
 ├── CatalogScreens.kt  # Course catalog + course detail
-└── SupportScreens.kt  # Feedback (WhatsApp) and About
+└── SupportScreens.kt  # Support tab (feedback email, contacts), Feedback (WhatsApp), About
 app/src/main/assets/catalog.json   # offline catalog snapshot
 ```
 

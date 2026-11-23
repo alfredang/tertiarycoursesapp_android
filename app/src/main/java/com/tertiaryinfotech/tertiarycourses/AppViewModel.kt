@@ -1,5 +1,7 @@
 package com.tertiaryinfotech.tertiarycourses
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -7,11 +9,10 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
 import android.util.Log
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -41,6 +42,10 @@ sealed interface Route {
     data object Catalog : Route
     data object Feedback : Route
     data object About : Route
+    /** Billing, reached from Account (its tab became Support). */
+    data object Billing : Route
+    /** Support, reached from Account in the roles without a Support tab. */
+    data object Support : Route
 }
 
 enum class Bucket(val label: String) { CURRENT("Current"), UPCOMING("Upcoming"), PAST("Past") }
@@ -60,11 +65,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Roles ──
     //
-    // The app shows one role at a time: the one picked on the sign-in screen (Learner
-    // or Trainer; a trainer who is taking courses signs in as a learner to see them).
-    // Only the owner account can switch role while signed in, and is also offered the
-    // staff dashboards for the roles the website says it holds. The choice changes
-    // what this device shows, never what the server allows.
+    // The app shows one role at a time; it opens on the one picked on the sign-in screen
+    // (Learner or Trainer). Every account that holds more than one role (trainer and
+    // learner, plus the staff roles the website lists in profile.roles) switches with
+    // "View as" on the home header, in every country's app. The choice changes what this
+    // device shows, never what the server allows: each endpoint checks the role itself.
 
     private var viewRole by mutableStateOf(settings.viewRole)
     /** The role picked on the sign-in screen: "learner" (default) or "trainer". */
@@ -77,17 +82,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         settings.loginRole = role
     }
 
-    /** The one account that can switch roles, and only in the Singapore app: MY and GH look the same for everyone. */
-    private val isOwner get() = Site.code == "SG" && learner?.email?.lowercase() == OWNER_EMAIL
-
     val availableRoles: List<String>
         get() {
             val l = learner ?: return emptyList()
-            // Everyone else has exactly one role per sign-in: the one chosen on the
-            // sign-in screen, or Learner when the account does not teach.
-            if (!isOwner) return listOf(if (loginRole == "trainer" && l.isTrainer) "trainer" else "learner")
             val roles = if (l.isTrainer) mutableListOf("trainer", "learner") else mutableListOf("learner")
-            // The franchise dashboard belongs to the Singapore site only.
             roles += staffRoleNames.keys.filter { it in l.roles }
             return roles
         }
@@ -130,6 +128,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var staffDashboard by mutableStateOf<StaffDashboard?>(null); private set
     /** The dashboard reloads each time its tab is shown; the old figures are dropped first. */
     fun clearStaffDashboard() { staffDashboard = null }
+    /** Admin Home (running today, next 30 days) and Developer Home (the course list). */
+    var adminClasses by mutableStateOf<AdminClassesReply?>(null); private set
+    var developerCourses by mutableStateOf<DeveloperCoursesReply?>(null); private set
+    /** Admin Calendar: the classes of each month already loaded, keyed "2026-11". */
+    val adminCalendar = mutableStateMapOf<String, List<StaffClass>>()
+    /** Support tab contacts (the [Site] constants until `GET support` answers). */
+    var support by mutableStateOf<SupportInfo?>(null); private set
 
     /** Appearance: the account's saved theme while signed in, the device setting otherwise. */
     var themePref by mutableStateOf(settings.theme); private set
@@ -215,7 +220,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (signOut) clear()
         if (extras.containsKey("START_TAB")) {
             val t = extras.getInt("START_TAB", 0)
-            guestTab = t.coerceIn(0, 2); learnerTab = t.coerceIn(0, 5)
+            guestTab = t.coerceIn(0, 2); learnerTab = t.coerceIn(0, TAB_SUPPORT)
         }
         extras.getString("OPEN_BUCKET")?.let { b -> pendingBucket = Bucket.entries.firstOrNull { it.name.equals(b, true) } }
         if (extras.containsKey("OPEN_RUN_ID")) pendingRunId = extras.getInt("OPEN_RUN_ID").takeIf { it > 0 }
@@ -461,6 +466,51 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         staffDashboard = StaffDashboard.from(api.getAsync("staff/dashboard", mapOf("role" to role)))
     }
 
+    suspend fun loadAdminClasses() {
+        adminClasses = AdminClassesReply.from(api.getAsync("staff/classes", mapOf("role" to "admin")))
+    }
+
+    /** The classes overlapping one month ([month] = "2026-11"), for the admin calendar. */
+    suspend fun loadAdminCalendar(month: String) {
+        val ym = java.time.YearMonth.parse(month)
+        val reply = api.getAsync("staff/classes", mapOf(
+            "role" to "admin", "from" to ym.atDay(1).toString(), "to" to ym.atEndOfMonth().toString(),
+        ))
+        adminCalendar[month] = reply.list("classes", StaffClass::from)
+    }
+
+    suspend fun loadDeveloperCourses() {
+        developerCourses = DeveloperCoursesReply.from(api.getAsync("staff/courses", mapOf("role" to "developer")))
+    }
+
+    // ── Support ──
+
+    /** Loads the contacts; offline or on an older site the [Site] constants stay. */
+    suspend fun loadSupport() {
+        support = try {
+            SupportInfo.from(api.getAsync("support").obj("support"))
+        } catch (e: ApiException) {
+            support ?: SupportInfo.fallback
+        }
+    }
+
+    /** Emails the message to the academy with the account's name and email. Returns the site's reply. */
+    suspend fun sendSupport(subject: String, message: String): String =
+        api.postAsync("support", JSONObject()
+            .put("subject", subject.trim()).put("message", message.trim()).put("app_version", appVersion))
+            .str("message").ifEmpty { "Thank you. Your message has been sent." }
+
+    // ── Trainer announcements ──
+
+    /** Posts a text announcement to the class; returns the class's posts. */
+    suspend fun postAnnouncement(runId: Int, message: String): List<Announcement> =
+        api.postAsync("trainer/announcement", JSONObject().put("run_id", runId).put("message", message.trim()))
+            .list("announcements", Announcement::from)
+
+    suspend fun deleteAnnouncement(runId: Int, id: Int): List<Announcement> =
+        api.postAsync("trainer/announcement", JSONObject().put("run_id", runId).put("delete_id", id))
+            .list("announcements", Announcement::from)
+
     fun changeReminders(on: Boolean) {
         remindersOn = on
         settings.remindersOn = on
@@ -525,6 +575,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         payouts = null
         trainingHours = null
         staffDashboard = null
+        adminClasses = null
+        developerCourses = null
+        adminCalendar.clear()
+        support = null
         Reminders.schedule(getApplication(), emptyList())
         certificates = null
         orders = null
@@ -717,9 +771,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         JSONObject(text).optJSONArray("courses")?.objects()?.map(Course::from) ?: emptyList()
 
     companion object {
-        /** The only account that is offered the staff dashboards. */
-        private const val OWNER_EMAIL = "angch@tertiaryinfotech.com"
-
         /** URL scheme the site returns to after Google sign-in; AndroidManifest.xml registers the same one (authScheme). */
         val AUTH_SCHEME = "tclms" + Site.code.lowercase()
 
@@ -735,9 +786,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         const val TAB_CALENDAR = 1
         /** Certificates for a learner, Payout for a trainer. */
         const val TAB_THIRD = 2
-        /** Billing for a learner, Hours for a trainer. */
+        /** Hours for a trainer. */
         const val TAB_FOURTH = 3
         const val TAB_ACCOUNT = 4
+        /** Home of the staff views (Admin, Developer, Marketing, Franchise Admin). */
         const val TAB_DASHBOARD = 5
+        /** The public course catalog (staff views). */
+        const val TAB_COURSES = 6
+        /** Support (learner view; Billing moved to a row in Account). */
+        const val TAB_SUPPORT = 7
     }
 }

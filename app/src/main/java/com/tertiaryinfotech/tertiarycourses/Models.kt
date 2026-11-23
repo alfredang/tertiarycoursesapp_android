@@ -19,6 +19,10 @@ fun JSONObject.num(key: String): Double =
 
 fun JSONObject.int(key: String): Int = num(key).toInt()
 
+/** A number, or null when the key is missing or JSON null (averages with no answers yet). */
+fun JSONObject.numOrNull(key: String): Double? =
+    if (!has(key) || isNull(key)) null else optDouble(key, Double.NaN).takeIf { !it.isNaN() }
+
 fun JSONObject.bool(key: String): Boolean = optBool(key) ?: false
 
 /** true / false / null — the API also sends 1/0 for some flags. */
@@ -255,8 +259,13 @@ data class TrainerClassDetail(
     val materials: List<Material>,
     val documents: List<Material>,
     val surveyResponses: Int,
-    /** The course survey link the trainer shows the class. */
+    /** The course survey link (kept for older data; the class page no longer shows it to trainers). */
     val feedbackUrl: String,
+    // 1.6: the website's class page sections (absent from an older site).
+    val announcements: List<Announcement> = emptyList(),
+    val lesson: List<LessonTopic> = emptyList(),
+    val practiceExam: PracticeExam? = null,
+    val feedbackSummary: FeedbackSummary? = null,
 ) {
     companion object {
         fun from(j: JSONObject) = TrainerClassDetail(
@@ -266,6 +275,84 @@ data class TrainerClassDetail(
             j.str("current_session_label"), j.bool("attendance_open"), j.str("checkin_url"), j.list("roster", RosterEntry::from),
             j.list("materials", Material::from), j.list("documents", Material::from), j.int("survey_responses"),
             j.str("feedback_url"),
+            j.list("announcements", Announcement::from), j.list("lesson", LessonTopic::from),
+            j.obj("practice_exam")?.let(PracticeExam::from), j.obj("feedback_summary")?.let(FeedbackSummary::from),
+        )
+    }
+}
+
+// ── Class page sections (1.6) ──
+
+/** A post on the class page, oldest first. [fileUrl] is an attachment posted on the website. */
+data class Announcement(val id: Int, val message: String, val fileName: String, val fileUrl: String, val postedBy: String, val postedAt: String) {
+    companion object {
+        fun from(j: JSONObject) = Announcement(
+            j.int("id"), j.str("message"), j.str("file_name"), j.str("file_url"), j.str("posted_by"), j.str("posted_at"),
+        )
+    }
+}
+
+/**
+ * One link of a Lesson sub topic. [type] is web, document, activity, video or quiz. A quiz
+ * carries [quizId] and its question count; for a trainer [url] is the QR link learners scan,
+ * for a learner it is empty and [previous] is the latest score.
+ */
+data class LessonLink(val type: String, val title: String, val url: String, val quizId: Int, val questions: Int, val previous: QuizScore?) {
+    val isQuiz: Boolean get() = type == "quiz" && quizId > 0
+
+    companion object {
+        fun from(j: JSONObject) = LessonLink(
+            j.str("type"), j.str("title"), j.str("url"), j.int("quiz_id"), j.int("questions"), j.obj("previous")?.let(QuizScore::from),
+        )
+    }
+}
+
+data class LessonSubtopic(val title: String, val links: List<LessonLink>) {
+    companion object {
+        fun from(j: JSONObject) = LessonSubtopic(j.str("title"), j.list("links", LessonLink::from))
+    }
+}
+
+data class LessonTopic(val title: String, val subtopics: List<LessonSubtopic>) {
+    companion object {
+        fun from(j: JSONObject) = LessonTopic(j.str("title"), j.list("subtopics", LessonSubtopic::from))
+    }
+}
+
+/** The course's practice exam and the class's self-register link (trainer). */
+data class PracticeExam(val examCode: String, val examUrl: String, val selfRegisterUrl: String, val open: Boolean) {
+    companion object {
+        fun from(j: JSONObject) = PracticeExam(j.str("exam_code"), j.str("exam_url"), j.str("self_register_url"), j.optBool("open") ?: true)
+    }
+}
+
+data class FeedbackQuestion(val label: String, val average: Double?) {
+    companion object {
+        fun from(j: JSONObject) = FeedbackQuestion(j.str("label"), j.numOrNull("average"))
+    }
+}
+
+/** The class's course feedback: [overall] and each average are out of 5 (null with no answers). Comments newest first. */
+data class FeedbackSummary(val count: Int, val overall: Double?, val questions: List<FeedbackQuestion>, val comments: List<String>) {
+    companion object {
+        fun from(j: JSONObject) = FeedbackSummary(
+            j.int("count"), j.numOrNull("overall"), j.list("questions", FeedbackQuestion::from), j.strings("comments"),
+        )
+    }
+}
+
+// ── Support tab ──
+
+/** The academy's contacts from `GET support`; an empty field falls back to the [Site] constant. */
+data class SupportInfo(val email: String, val phone: String, val whatsApp: String, val address: String) {
+    companion object {
+        val fallback = SupportInfo(Site.email, Site.phone, Site.whatsAppLabel, Site.address)
+
+        fun from(j: JSONObject?) = SupportInfo(
+            j?.str("email")?.ifEmpty { null } ?: Site.email,
+            j?.str("phone")?.ifEmpty { null } ?: Site.phone,
+            j?.str("whatsapp")?.ifEmpty { null } ?: Site.whatsAppLabel,
+            j?.str("address")?.ifEmpty { null } ?: Site.address,
         )
     }
 }
@@ -330,6 +417,9 @@ data class ClassDetail(
     val certificateRule: String,
     /** Lesson quizzes of the class's course (empty on a site that predates them). */
     val quizzes: List<QuizSummary>,
+    // 1.6: the website's class page sections (absent from an older site).
+    val announcements: List<Announcement> = emptyList(),
+    val lesson: List<LessonTopic> = emptyList(),
 ) {
     companion object {
         fun from(j: JSONObject) = ClassDetail(
@@ -339,6 +429,7 @@ data class ClassDetail(
             j.list("materials", Material::from), j.list("documents", Material::from), SurveyState.from(j.obj("survey")),
             j.obj("certificate")?.let(CertificateInfo::from), j.str("certificate_rule"),
             j.list("quizzes", QuizSummary::from),
+            j.list("announcements", Announcement::from), j.list("lesson", LessonTopic::from),
         )
     }
 }
@@ -556,6 +647,95 @@ data class StaffDashboard(val role: String, val title: String, val cards: List<S
         fun from(j: JSONObject) = StaffDashboard(
             j.str("role"), j.str("title"), j.list("cards", StaffCard::from), j.list("lists", StaffList::from), j.str("updated_at"),
         )
+    }
+}
+
+// ── Admin and developer homes ──
+
+/** A class in the admin lists and calendar (`staff/classes`). [trainer] is empty when none is assigned. */
+data class StaffClass(
+    val runId: Int,
+    val classId: String,
+    val sku: String,
+    val title: String,
+    val startDate: String,
+    val endDate: String,
+    val startTime: String,
+    val endTime: String,
+    val mode: String,
+    val venue: String,
+    val trainer: String,
+    val learnerCount: Int,
+) {
+    fun matches(query: String): Boolean {
+        val q = query.trim()
+        return q.isEmpty() || listOf(title, sku, classId, trainer).any { it.contains(q, ignoreCase = true) }
+    }
+
+    /** Every day from the start to the end date (at most 62). */
+    val days: List<String>
+        get() {
+            val s = Fmt.date(startDate) ?: return emptyList()
+            val e = Fmt.date(endDate)?.takeIf { !it.isBefore(s) } ?: s
+            val out = mutableListOf<String>()
+            var d = s
+            while (!d.isAfter(e) && out.size < 62) { out += d.toString(); d = d.plusDays(1) }
+            return out
+        }
+
+    companion object {
+        fun from(j: JSONObject) = StaffClass(
+            j.int("run_id"), j.str("class_id"), j.str("sku"), j.str("title"), j.str("start_date"), j.str("end_date"),
+            j.str("start_time"), j.str("end_time"), j.str("mode"), j.str("venue"), j.str("trainer"), j.int("learner_count"),
+        )
+    }
+}
+
+data class AdminClassesReply(
+    val today: String,
+    val runningToday: Int,
+    val next30Days: Int,
+    val learnersToday: Int,
+    val current: List<StaffClass>,
+    val upcoming: List<StaffClass>,
+) {
+    companion object {
+        fun from(j: JSONObject): AdminClassesReply {
+            val k = j.obj("kpis")
+            val current = j.list("current", StaffClass::from)
+            val upcoming = j.list("upcoming", StaffClass::from)
+            return AdminClassesReply(
+                j.str("today"), k?.int("running_today") ?: current.size, k?.int("next_30_days") ?: upcoming.size,
+                k?.int("learners_today") ?: current.sumOf { it.learnerCount }, current, upcoming,
+            )
+        }
+    }
+}
+
+/** A non-WSQ course in the developer home (`staff/courses`). [nextClass] is "" when none is scheduled. */
+data class StaffCourse(val id: Int, val sku: String, val title: String, val enabled: Boolean, val upcomingClasses: Int, val nextClass: String) {
+    fun matches(query: String): Boolean {
+        val q = query.trim()
+        return q.isEmpty() || title.contains(q, ignoreCase = true) || sku.contains(q, ignoreCase = true)
+    }
+
+    companion object {
+        fun from(j: JSONObject) = StaffCourse(
+            j.int("id"), j.str("sku"), j.str("title"), j.optBool("enabled") ?: true, j.int("upcoming_classes"), j.str("next_class"),
+        )
+    }
+}
+
+data class DeveloperCoursesReply(val today: String, val total: Int, val withClasses: Int, val disabled: Int, val courses: List<StaffCourse>) {
+    companion object {
+        fun from(j: JSONObject): DeveloperCoursesReply {
+            val k = j.obj("kpis")
+            val courses = j.list("courses", StaffCourse::from)
+            return DeveloperCoursesReply(
+                j.str("today"), k?.int("courses") ?: courses.size, k?.int("with_classes") ?: courses.count { it.upcomingClasses > 0 },
+                k?.int("disabled") ?: courses.count { !it.enabled }, courses,
+            )
+        }
     }
 }
 
