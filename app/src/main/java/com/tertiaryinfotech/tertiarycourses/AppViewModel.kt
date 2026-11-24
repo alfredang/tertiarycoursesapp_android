@@ -39,6 +39,7 @@ sealed interface Route {
     data class TrainerClass(val runId: Int, val title: String) : Route
     /** A material, document or certificate shown inside the app. */
     data class Document(val title: String, val url: String) : Route
+    data class DevCourse(val id: Int, val sku: String) : Route
     data object Catalog : Route
     data object Feedback : Route
     data object About : Route
@@ -85,7 +86,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val availableRoles: List<String>
         get() {
             val l = learner ?: return emptyList()
-            val roles = if (l.isTrainer) mutableListOf("trainer", "learner") else mutableListOf("learner")
+            val roles = if (l.isTrainer) mutableListOf("learner", "trainer") else mutableListOf("learner")
             roles += staffRoleNames.keys.filter { it in l.roles }
             return roles
         }
@@ -420,13 +421,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
      * [linkedin] is not null) to the account. The theme is applied on this device straight
      * away, even when the site can't be reached.
      */
-    suspend fun updateProfile(firstName: String, lastName: String, phone: String, linkedin: String?, theme: String): String {
+    suspend fun updateProfile(firstName: String, lastName: String, phone: String, linkedin: String?, theme: String, employment: String? = null): String {
         applyTheme(theme)
         val reply = try {
             api.postAsync("profile", JSONObject()
                 .put("first_name", firstName.trim()).put("last_name", lastName.trim())
                 .put("phone", phone.trim()).put("theme", theme)
-                .apply { if (linkedin != null) put("linkedin_url", linkedin.trim()) })
+                .apply { if (linkedin != null) put("linkedin_url", linkedin.trim()) }
+                .apply { if (employment != null) put("employment_status", employment) })
         } catch (e: ApiException) {
             // A site that hasn't been updated yet has no profile endpoint.
             if (e.status == 404) throw ApiException("Your appearance is saved on this device. Editing your name and phone will be available shortly.", 404)
@@ -478,6 +480,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         ))
         adminCalendar[month] = reply.list("classes", StaffClass::from)
     }
+
+    suspend fun loadDeveloperCourse(id: Int): DevCourseDetail =
+        DevCourseDetail.from(api.getAsync("staff/course", mapOf("role" to "developer", "id" to id.toString())).obj("course") ?: throw ApiException("Course not found.", 404))
 
     suspend fun loadDeveloperCourses() {
         developerCourses = DeveloperCoursesReply.from(api.getAsync("staff/courses", mapOf("role" to "developer")))
@@ -563,7 +568,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         trainerClasses = null
         lastClassRefresh = 0
         themeOverride = null
-        applyTheme("system")
+        applyTheme("light")   // the sign-in page is always light
         avatar = null
         avatarLoadedVersion = null
         viewRole = ""
@@ -776,7 +781,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
         /** Staff roles, in the order they are offered. */
         val staffRoleNames = linkedMapOf(
-            "admin" to "Admin", "marketing" to "Marketing", "developer" to "Developer", "franchise_admin" to "Franchise Admin",
+            "developer" to "Developer", "marketing" to "Marketing", "admin" to "Admin", "franchise_admin" to "Franchise Admin",
         )
 
         fun roleName(role: String): String = staffRoleNames[role] ?: if (role == "trainer") "Trainer" else "Learner"

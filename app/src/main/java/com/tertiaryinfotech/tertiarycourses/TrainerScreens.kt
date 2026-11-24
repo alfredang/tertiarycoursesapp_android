@@ -56,6 +56,8 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -295,6 +297,36 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                                     openForm = { openDocument(context, push, "${pe.examCode} Practice Exam".trim(), it) },
                                     openSite = { openUrl(context, it) },
                                 )
+                            }
+                        }
+                        // Course Feedback, as on the website's class page: the QR of the class's feedback form
+                        // (the TMS form for a class run from the TMS), its link, and the course code and run id.
+                        FoldCard("Course Feedback", Icons.Filled.RateReview, "Course Feedback" in open.value, { open.toggle("Course Feedback") }) {
+                            if (d.feedbackUrl.isNotEmpty()) {
+                                LinkRow(
+                                    Icons.Filled.QrCode2, "Show Course Feedback QR", subtitle = d.feedbackUrl,
+                                    trailingText = "Show QR", tag = "showFeedbackQr",
+                                ) {
+                                    qr = QrLink(
+                                        "Course Feedback", d.feedbackUrl, "Course Code: ${d.sku} · Course Run ID: ${d.classId}",
+                                        "Learners scan this to share their feedback on the class.", "Share Feedback Link", "feedbackQr",
+                                    )
+                                }
+                                FilledTonalButton(
+                                    onClick = { openUrl(context, d.feedbackUrl) },
+                                    colors = ButtonDefaults.filledTonalButtonColors(containerColor = Theme.tonal, contentColor = Theme.accent),
+                                    modifier = Modifier.fillMaxWidth().testTag("openFeedbackLink"),
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Open Link", fontSize = 16.sp)
+                                }
+                                Text(
+                                    "Course Code: ${d.sku}   ·   Course Run ID: ${d.classId}", fontSize = 13.sp, color = Theme.secondaryText,
+                                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+                                )
+                            } else {
+                                Text("The feedback form has not been set up for this class yet.", fontSize = 14.sp, color = Theme.secondaryText)
                             }
                         }
                         FoldCard("Course Feedback Summary", Icons.Filled.BarChart, "Course Feedback Summary" in open.value, { open.toggle("Course Feedback Summary") }) {

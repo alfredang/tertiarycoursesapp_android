@@ -3,7 +3,16 @@
 All notable changes to the TC LMS SG Android app (formerly Tertiary Courses SG).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.7] — 2026-11-24 · versionCode 7
+
+- Class page in the website's layout: E-Attendance, Announcements, Virtual Class Link, Courseware, Lesson, Course Survey and Certificate.
+- Practice Exam: register on the class page; trainers are registered automatically.
+- Trainers: Course Feedback with a full-screen QR code for learners to scan.
+- Calendar month grid, "Find your course" search, a Support tab, and View as for every role.
+- The sign-in screens are always light.
+- Trainers: every class page has the Course Feedback section again, as on the website: show the feedback QR full screen for learners to scan, share or open the link, with the course code and run id.
+
+## [1.6] — 2026-11-23
 
 The website's class page and the TIA house layout, in step with the iOS app.
 
@@ -20,6 +29,11 @@ The website's class page and the TIA house layout, in step with the iOS app.
 - Every account with more than one role can switch with View as, in every country's app.
 - Class cards show the course code, chips, dates, the venue address (mode only for Live Online or Hybrid) and learners or the trainer.
 - Calendar: month grid with class titles in each day, Today, swipe to change month, Upcoming / Past legend and Jump to next class.
+- Roles in the "View as" picker now run Learner, Trainer, Developer, Marketing, Admin, Franchise Admin.
+- Support tab redesigned in the Feedback layout, with the contact details in a card.
+- Developer home filters courses by All, Enabled or Disabled.
+- Class reminders follow the TIA TMS app: 3 days before, the evening before each class day, and the morning of each class, for classes you teach and classes you attend.
+- Profile: Name is one row.
 
 ## [1.5] — 2026-11-21 · versionCode 4
 

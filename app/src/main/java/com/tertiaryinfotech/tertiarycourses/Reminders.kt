@@ -29,7 +29,7 @@ class Settings(context: Context) {
 
     /** Last known account theme, so launch doesn't flash the wrong appearance. */
     var theme: String
-        get() = prefs.getString("theme", "system") ?: "system"
+        get() = prefs.getString("theme", "light") ?: "light"
         set(value) = prefs.edit { putString("theme", value) }
 
     var remindersOn: Boolean
@@ -77,7 +77,7 @@ data class Reminder(val id: Int, val at: Long, val title: String, val text: Stri
  * Class reminders as LOCAL notifications: built on the device from the class list, with no
  * push service and no server. For every upcoming or current class (attending or teaching):
  * 3 days before the first day at 09:00, the evening before each class day at 18:00, and on
- * each class day one hour before the start (08:00 when the class has no start time).
+ * the morning of each class day at 08:00 (an hour before the start when that is earlier).
  * All times are in the site's time zone. Alarms are inexact (no exact-alarm permission).
  */
 object Reminders {
@@ -112,7 +112,7 @@ object Reminders {
             add("3d", first, millis(first.minusDays(3), LocalTime.of(9, 0)), "in 3 days")
             days.forEach { d ->
                 add("eve", d, millis(d.minusDays(1), LocalTime.of(18, 0)), "tomorrow")
-                if (start != null && start.hour >= 1) add("day", d, millis(d, start.minusHours(1)), "in 1 hour")
+                if (start != null && start.hour >= 1 && start <= LocalTime.of(8, 30)) add("day", d, millis(d, start.minusHours(1)), "in 1 hour")
                 else add("day", d, millis(d, LocalTime.of(8, 0)), "today")
             }
         }

@@ -2,6 +2,7 @@ package com.tertiaryinfotech.tertiarycourses
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -105,17 +107,17 @@ private fun SmallLine(icon: ImageVector, text: String, color: Color = Theme.seco
 
 // ── Developer Home ──
 
-private enum class CourseFilter(val label: String) { ALL("All"), WITH_CLASSES("With classes"), DISABLED("Disabled") }
+private enum class CourseFilter(val label: String) { ALL("All"), ENABLED("Enabled"), DISABLED("Disabled") }
 
-/** Welcome + View as; Courses / With classes / Disabled; the non-WSQ course list with a filter and search. */
+/** Welcome + View as; Courses / Enabled / Disabled; the non-WSQ course list with a filter and search. */
 @Composable
-fun DeveloperHomeScreen(vm: AppViewModel) {
+fun DeveloperHomeScreen(vm: AppViewModel, push: (Route) -> Unit) {
     var filter by rememberSaveable { mutableStateOf(CourseFilter.ALL) }
     var query by rememberSaveable { mutableStateOf("") }
     LoadedTab(vm.developerCourses, "developerHome", { vm.loadDeveloperCourses() }, header = { HomeHeader(vm) }) { data ->
         KpiTiles(
             "Courses" to "${data.total}",
-            "With classes" to "${data.withClasses}",
+            "Enabled" to "${data.total - data.disabled}",
             "Disabled" to "${data.disabled}",
         )
         Segments(CourseFilter.entries.map { it.label }, filter.ordinal, "courseFilter") { filter = CourseFilter.entries[it] }
@@ -123,7 +125,7 @@ fun DeveloperHomeScreen(vm: AppViewModel) {
         val shown = data.courses.filter { c ->
             when (filter) {
                 CourseFilter.ALL -> true
-                CourseFilter.WITH_CLASSES -> c.upcomingClasses > 0
+                CourseFilter.ENABLED -> c.enabled
                 CourseFilter.DISABLED -> !c.enabled
             } && c.matches(query)
         }
@@ -134,13 +136,13 @@ fun DeveloperHomeScreen(vm: AppViewModel) {
         if (shown.isEmpty()) {
             EmptyState(Icons.AutoMirrored.Filled.LibraryBooks, "No courses found", "Try another filter or search.")
         }
-        shown.forEach { StaffCourseCard(it) }
+        shown.forEach { StaffCourseCard(it) { push(Route.DevCourse(it.id, it.sku)) } }
     }
 }
 
 @Composable
-private fun StaffCourseCard(item: StaffCourse) {
-    InfoCard(Modifier.testTag("staffCourse-${item.id}"), padding = 14.dp) {
+private fun StaffCourseCard(item: StaffCourse, onOpen: () -> Unit) {
+    InfoCard(Modifier.testTag("staffCourse-${item.id}").clickable(onClick = onOpen), padding = 14.dp) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(item.sku.ifEmpty { "No code" }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent, maxLines = 1)
@@ -153,6 +155,91 @@ private fun StaffCourseCard(item: StaffCourse) {
                 else "${item.upcomingClasses} upcoming" + if (item.nextClass.isNotEmpty()) " · next ${Fmt.longDate(item.nextClass)}" else "",
                 if (item.upcomingClasses == 0) Theme.secondaryText else Theme.ink,
             )
+        }
+    }
+}
+
+// ── Developer course details (read only, as the admin edit page) ──
+
+@Composable
+fun DeveloperCourseScreen(vm: AppViewModel, id: Int, sku: String, onBack: () -> Unit) {
+    var detail by remember { mutableStateOf<DevCourseDetail?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    suspend fun load() { try { detail = vm.loadDeveloperCourse(id); error = null } catch (e: Exception) { error = e.message ?: "The course could not be loaded." } }
+    LaunchedEffect(id) { load() }
+    ScreenScaffold(title = sku.ifEmpty { "Course" }, onBack = onBack) { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            val d = detail
+            val err = error
+            when {
+                d != null -> {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(d.sku, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                        StatusChip(if (d.enabled) "Enabled" else "Disabled", if (d.enabled) Theme.success else Theme.danger)
+                    }
+                    Text(d.title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+                    DetailCard("Course details", listOf(
+                        "Price" to d.price?.let { "${d.currency} %.2f".format(it) }, "Duration (hours)" to d.durationHours,
+                        "Sessions" to d.sessions, "Level" to d.level, "Software" to d.software, "Programming language" to d.programmingLanguage,
+                    ))
+                    DetailText("Short description", d.shortDescription)
+                    if (d.topics.isNotEmpty()) InfoCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Topics", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+                            d.topics.forEachIndexed { i, t ->
+                                Text("${i + 1}. ${t.title}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+                                t.subTopics.forEach { Text("• $it", fontSize = 13.sp, color = Theme.secondaryText) }
+                            }
+                        }
+                    }
+                    DetailText("Prerequisite", d.prerequisite)
+                    DetailText("Additional note", d.additionalNote)
+                    DetailText("Trainer profile", d.trainerProfile)
+                    if (d.classes.isNotEmpty()) InfoCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Upcoming classes", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+                            d.classes.forEach {
+                                Text("${it.classId} · ${Fmt.longDate(it.startDate)}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+                                Text("${it.startTime}–${it.endTime} · ${it.mode} · vacancy ${it.vacancy}", fontSize = 13.sp, color = Theme.secondaryText)
+                            }
+                        }
+                    }
+                    DetailCard("Search listing", listOf(
+                        "Meta title" to d.metaTitle, "Meta description" to d.metaDescription, "Meta keywords" to d.metaKeywords, "Page" to d.url,
+                    ))
+                }
+                err != null -> ErrorCard(err) { scope.launch { load() } }
+                else -> LoadingBox("Loading course…")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DetailText(title: String, value: String) {
+    if (value.isNotBlank()) InfoCard {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+            Text(value, fontSize = 14.sp, color = Theme.ink)
+        }
+    }
+}
+
+@Composable
+private fun DetailCard(title: String, rows: List<Pair<String, String?>>) {
+    val shown = rows.filter { !it.second.isNullOrBlank() }
+    if (shown.isEmpty()) return
+    InfoCard {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Theme.ink)
+            shown.forEach { (k, v) ->
+                Text(k, fontSize = 12.sp, color = Theme.secondaryText)
+                Text(v.orEmpty(), fontSize = 14.sp, color = Theme.ink)
+            }
         }
     }
 }

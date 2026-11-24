@@ -222,7 +222,12 @@ fun SupportScreen(vm: AppViewModel, onBack: (() -> Unit)? = null) {
             Modifier.padding(padding).fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            SectionLabel("Feedback", Modifier.padding(start = 4.dp))
+            InfoCard {
+                Text("We're here to help", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Theme.accent)
+                Spacer(Modifier.height(6.dp))
+                Text("Ask a question or tell us what went wrong. Your message is emailed to the academy with your name and email, so we can reply.", fontSize = 14.sp, color = Theme.secondaryText)
+            }
+            SectionLabel("Your message", Modifier.padding(top = 12.dp, start = 4.dp))
             InfoCard {
                 val colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Theme.accent, unfocusedBorderColor = Theme.cardBorder,
@@ -240,7 +245,7 @@ fun SupportScreen(vm: AppViewModel, onBack: (() -> Unit)? = null) {
                 )
                 Spacer(Modifier.height(12.dp))
                 PrimaryButton(
-                    if (sending) "Sending…" else "Send feedback", Icons.AutoMirrored.Filled.Send,
+                    if (sending) "Sending…" else "Send message", Icons.AutoMirrored.Filled.Send,
                     enabled = subject.isNotBlank() && message.isNotBlank(), busy = sending, modifier = Modifier.testTag("supportSend"),
                 ) {
                     scope.launch {
@@ -264,7 +269,6 @@ fun SupportScreen(vm: AppViewModel, onBack: (() -> Unit)? = null) {
                     Text(it, fontSize = 13.sp, color = Theme.danger)
                 }
             }
-            Footnote("Your message is emailed to the academy with your name and email, so we can reply.")
 
             SectionLabel("Contact us", Modifier.padding(top = 12.dp, start = 4.dp))
             InfoCard(padding = 0.dp) {

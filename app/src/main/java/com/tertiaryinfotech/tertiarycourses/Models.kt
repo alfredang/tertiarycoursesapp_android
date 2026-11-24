@@ -70,6 +70,8 @@ data class Learner(
     val avatarVersion: Long? = null,
     /** Trainers and staff only; empty when not set. */
     val linkedinUrl: String = "",
+    /** "", Employed, Unemployed or Looking for Job. */
+    val employmentStatus: String = "",
 ) {
     /** Trainer on the website, whatever view the app is showing (see AppViewModel.activeRole). */
     val isTrainer: Boolean get() = "trainer" in roles
@@ -77,7 +79,7 @@ data class Learner(
     fun toJson(): String = JSONObject()
         .put("email", email).put("first_name", firstName).put("last_name", lastName).put("full_name", fullName)
         .put("phone", phone).put("theme", theme).put("roles", JSONArray(roles))
-        .put("linkedin_url", linkedinUrl)
+        .put("linkedin_url", linkedinUrl).put("employment_status", employmentStatus)
         .apply { if (avatarVersion != null) put("avatar_version", avatarVersion) }
         .toString()
 
@@ -87,7 +89,7 @@ data class Learner(
             j.str("theme").lowercase().takeIf { it == "light" || it == "dark" } ?: "system",
             j.strings("roles").map { it.lowercase() }.ifEmpty { listOf("learner") },
             if (!j.has("avatar_version") || j.isNull("avatar_version")) null else j.optLong("avatar_version").takeIf { it > 0 },
-            j.str("linkedin_url"),
+            j.str("linkedin_url"), j.str("employment_status"),
         )
     }
 }
@@ -259,7 +261,7 @@ data class TrainerClassDetail(
     val materials: List<Material>,
     val documents: List<Material>,
     val surveyResponses: Int,
-    /** The course survey link (kept for older data; the class page no longer shows it to trainers). */
+    /** The class's feedback form link, shown to the trainer as the Course Feedback QR. */
     val feedbackUrl: String,
     // 1.6: the website's class page sections (absent from an older site).
     val announcements: List<Announcement> = emptyList(),
@@ -732,6 +734,32 @@ data class StaffCourse(val id: Int, val sku: String, val title: String, val enab
     companion object {
         fun from(j: JSONObject) = StaffCourse(
             j.int("id"), j.str("sku"), j.str("title"), j.optBool("enabled") ?: true, j.int("upcoming_classes"), j.str("next_class"),
+        )
+    }
+}
+
+data class DevTopic(val title: String, val subTopics: List<String>)
+data class DevClass(val classId: String, val startDate: String, val endDate: String, val startTime: String, val endTime: String, val vacancy: String, val mode: String)
+
+/** A course as the admin edit page shows it (`staff/course`), read only. */
+data class DevCourseDetail(
+    val id: Int, val sku: String, val title: String, val enabled: Boolean, val price: Double?, val currency: String,
+    val durationHours: String, val sessions: String, val level: String, val software: String, val programmingLanguage: String,
+    val shortDescription: String, val topics: List<DevTopic>, val prerequisite: String, val additionalNote: String,
+    val trainerProfile: String, val metaTitle: String, val metaDescription: String, val metaKeywords: String,
+    val url: String, val classes: List<DevClass>,
+) {
+    companion object {
+        fun from(j: JSONObject) = DevCourseDetail(
+            j.int("id"), j.str("sku"), j.str("title"), j.optBool("enabled") ?: true, j.numOrNull("price"), j.str("currency"),
+            j.str("duration_hours"), j.str("sessions"), j.str("level"), j.str("software"), j.str("programming_language"),
+            j.str("short_description"),
+            (j.optJSONArray("topics")?.objects() ?: emptyList()).map { DevTopic(it.str("title"), it.strings("sub_topics")) },
+            j.str("prerequisite"), j.str("additional_note"), j.str("trainer_profile"), j.str("meta_title"),
+            j.str("meta_description"), j.str("meta_keywords"), j.str("url"),
+            (j.optJSONArray("upcoming_classes")?.objects() ?: emptyList()).map {
+                DevClass(it.str("class_id"), it.str("start_date"), it.str("end_date"), it.str("start_time"), it.str("end_time"), it.str("vacancy"), it.str("mode"))
+            },
         )
     }
 }

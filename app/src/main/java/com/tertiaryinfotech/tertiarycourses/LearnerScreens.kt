@@ -483,7 +483,7 @@ fun AccountScreen(vm: AppViewModel, push: (Route) -> Unit) {
             InfoCard(padding = 0.dp) {
                 RemindersRow(vm)
             }
-            Footnote("Reminds you 3 days before a class starts, the evening before each class day, and an hour before it begins.")
+            Footnote("Reminds you 3 days before a class starts, the evening before each class day, and on the morning of each class.")
 
             // The learner's Billing tab became Support; their orders and invoices are here.
             if (!vm.isTrainer && vm.staffRole == null) {

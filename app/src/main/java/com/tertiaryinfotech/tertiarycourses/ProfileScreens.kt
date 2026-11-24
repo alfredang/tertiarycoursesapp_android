@@ -128,10 +128,10 @@ fun ProfileSections(vm: AppViewModel) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val learner = vm.learner
-    var first by rememberSaveable { mutableStateOf(learner?.firstName.orEmpty()) }
-    var last by rememberSaveable { mutableStateOf(learner?.lastName.orEmpty()) }
+    var fullName by rememberSaveable { mutableStateOf(listOfNotNull(learner?.firstName, learner?.lastName).filter { it.isNotBlank() }.joinToString(" ")) }
     var phone by rememberSaveable { mutableStateOf(learner?.phone.orEmpty()) }
     var linkedin by rememberSaveable { mutableStateOf(learner?.linkedinUrl.orEmpty()) }
+    var employment by rememberSaveable { mutableStateOf(learner?.employmentStatus.orEmpty()) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var avatarBusy by remember { mutableStateOf(false) }
@@ -237,8 +237,22 @@ fun ProfileSections(vm: AppViewModel) {
     SectionLabel("Name", Modifier.padding(top = 10.dp, start = 4.dp))
     InfoCard {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            ProfileField("First name", first, KeyboardType.Text, "firstName") { first = it }
-            ProfileField("Last name", last, KeyboardType.Text, "lastName") { last = it }
+            ProfileField("Name", fullName, KeyboardType.Text, "fullName") { fullName = it }
+        }
+    }
+
+    SectionLabel("Employment status", Modifier.padding(top = 10.dp, start = 4.dp))
+    InfoCard {
+        Column {
+            listOf("" to "Not set", "Employed" to "Employed", "Unemployed" to "Unemployed", "Looking for Job" to "Looking for Job").forEach { (value, label) ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { employment = value }.padding(vertical = 4.dp).testTag("employment-$label"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.RadioButton(selected = employment == value, onClick = { employment = value })
+                    Text(label, fontSize = 15.sp, color = Theme.ink)
+                }
+            }
         }
     }
 
@@ -348,11 +362,15 @@ fun ProfileSections(vm: AppViewModel) {
     Footnote("System follows your phone's light or dark setting. Your choice is saved to your account.")
 
     Spacer(Modifier.height(6.dp))
-    PrimaryButton("Save Changes", enabled = first.isNotBlank(), busy = saving, modifier = Modifier.testTag("saveProfile")) {
+    PrimaryButton("Save Changes", enabled = fullName.isNotBlank(), busy = saving, modifier = Modifier.testTag("saveProfile")) {
         scope.launch {
             saving = true
             try {
-                var notice = vm.updateProfile(first, last, phone, if (isStaffOrTrainer) linkedin else null, vm.themePref)
+                // One Name row; the site keeps first and last name apart, so split at the last space.
+                val words = fullName.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                val first = if (words.size > 1) words.dropLast(1).joinToString(" ") else words.firstOrNull().orEmpty()
+                val last = if (words.size > 1) words.last() else ""
+                var notice = vm.updateProfile(first, last, phone, if (isStaffOrTrainer) linkedin else null, vm.themePref, employment)
                 if (isRealTrainer && vm.certsLoaded) {
                     vm.saveCertifications()
                     notice = "Profile and certifications saved."
