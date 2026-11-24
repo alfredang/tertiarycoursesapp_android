@@ -32,6 +32,11 @@ def version_code():
     return int(re.search(r"versionCode\s*=\s*(\d+)", gradle).group(1))
 
 
+def version_name():
+    gradle = open(os.path.join(ROOT, "app/build.gradle.kts")).read()
+    return re.search(r'versionName\s*=\s*"([^"]+)"', gradle).group(1)
+
+
 def release_notes():
     text = open(os.path.join(ROOT, "CHANGELOG.md")).read()
     block = re.split(r"(?m)^##\s+", text)[1]
@@ -137,7 +142,7 @@ def main():
     notes = listing.get("releaseNotes") or release_notes()
     svc.edits().tracks().update(packageName=pkg, editId=eid, track=a.track, body={
         "track": a.track,
-        "releases": [{"name": listing.get("releaseName", str(vc)), "versionCodes": [str(vc)], "status": a.release_status,
+        "releases": [{"name": f"{version_name()} ({vc})", "versionCodes": [str(vc)], "status": a.release_status,
                       "releaseNotes": [{"language": lang, "text": notes}]}]}).execute()
     print(f"{a.track} release staged:\n{notes}")
 
