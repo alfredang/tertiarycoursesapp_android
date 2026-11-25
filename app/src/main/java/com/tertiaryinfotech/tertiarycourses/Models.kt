@@ -230,9 +230,15 @@ data class ClassesReply(
 
 // ── Trainer ──
 
-data class RosterEntry(val name: String, val email: String, val phone: String, val walkin: Boolean, val present: Set<String>) {
+/** [signed]: session keys this learner has signed with a finger (app 1.5+). */
+data class RosterEntry(
+    val name: String, val email: String, val phone: String, val walkin: Boolean, val present: Set<String>,
+    val signed: Set<String> = emptySet(),
+) {
     companion object {
-        fun from(j: JSONObject) = RosterEntry(j.str("name"), j.str("email"), j.str("phone"), j.bool("walkin"), j.strings("present").toSet())
+        fun from(j: JSONObject) = RosterEntry(
+            j.str("name"), j.str("email"), j.str("phone"), j.bool("walkin"), j.strings("present").toSet(), j.strings("signed").toSet(),
+        )
     }
 }
 
@@ -268,6 +274,8 @@ data class TrainerClassDetail(
     val lesson: List<LessonTopic> = emptyList(),
     val practiceExam: PracticeExam? = null,
     val feedbackSummary: FeedbackSummary? = null,
+    /** Session keys the trainer has signed for (app 1.5+). */
+    val trainerSigned: Set<String> = emptySet(),
 ) {
     companion object {
         fun from(j: JSONObject) = TrainerClassDetail(
@@ -279,6 +287,7 @@ data class TrainerClassDetail(
             j.str("feedback_url"),
             j.list("announcements", Announcement::from), j.list("lesson", LessonTopic::from),
             j.obj("practice_exam")?.let(PracticeExam::from), j.obj("feedback_summary")?.let(FeedbackSummary::from),
+            j.strings("trainer_signed").toSet(),
         )
     }
 }
@@ -379,11 +388,14 @@ data class AttendanceState(
     val markedPresent: Boolean,
     val sessionsPresent: Int,
     val sessionsTotal: Int,
+    /** Signed (finger signature) for the current session; null from a site before app 1.5's API. */
+    val signed: Boolean? = null,
 ) {
     companion object {
         fun from(j: JSONObject?) = AttendanceState(
             j?.bool("open") ?: false, j?.str("current_session") ?: "", j?.str("current_session_label") ?: "",
             j?.bool("marked_present") ?: false, j?.int("sessions_present") ?: 0, j?.int("sessions_total") ?: 0,
+            j?.optBool("signed"),
         )
     }
 }

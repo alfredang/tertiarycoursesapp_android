@@ -44,6 +44,7 @@ import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EditNote
@@ -366,7 +367,7 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
     val scope = rememberCoroutineScope()
     var detail by remember { mutableStateOf<ClassDetail?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var checkingIn by remember { mutableStateOf(false) }
+    var signing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     val open = rememberOpenSections(runId)
 
@@ -403,20 +404,7 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
                             "E-Attendance", Icons.Filled.CheckCircle, "E-Attendance" in open.value, { open.toggle("E-Attendance") },
                             trailing = if (a.sessionsTotal > 0) "${a.sessionsPresent}/${a.sessionsTotal}" else null,
                         ) {
-                            AttendanceContent(d, checkingIn) {
-                                scope.launch {
-                                    checkingIn = true
-                                    try {
-                                        notice = vm.markAttendance(runId)
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        load()
-                                    } catch (e: Exception) {
-                                        notice = e.message
-                                    } finally {
-                                        checkingIn = false
-                                    }
-                                }
-                            }
+                            AttendanceContent(d) { signing = true }
                         }
                         FoldCard(
                             "Announcements", Icons.Filled.Campaign, "Announcements" in open.value, { open.toggle("Announcements") },
@@ -477,6 +465,16 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
         }
     }
 
+    val signFor = detail
+    if (signing && signFor != null) {
+        val me = vm.learner
+        SignatureSheet(
+            title = signFor.title, sessionLabel = signFor.attendance.currentSessionLabel,
+            signers = listOf(Signer("me", me?.fullName?.ifBlank { me.email } ?: "Your signature")),
+            submit = { _, png -> vm.markAttendance(runId, png).also { notice = it } },
+            onDismiss = { signing = false; scope.launch { load() } },
+        )
+    }
     notice?.let { msg ->
         AlertDialog(
             onDismissRequest = { notice = null },
@@ -489,16 +487,22 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
 
 /** Check in, the sessions with a tick for each one attended, and "Attended x of y". */
 @Composable
-private fun AttendanceContent(d: ClassDetail, checkingIn: Boolean, checkIn: () -> Unit) {
+private fun AttendanceContent(d: ClassDetail, sign: () -> Unit) {
     val a = d.attendance
     when {
-        a.markedPresent -> IconLine(
-            Icons.Filled.CheckCircle, "You're checked in for ${a.currentSessionLabel}.",
-            color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
-        )
+        a.markedPresent -> {
+            IconLine(
+                Icons.Filled.CheckCircle, "You're checked in for ${a.currentSessionLabel}.",
+                color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
+            )
+            // Marked present by the trainer but not signed yet: the learner can still sign.
+            if (a.open && a.signed == false) {
+                TonalButton("Add Your Signature", Icons.Filled.Draw, modifier = Modifier.testTag("addSignature"), onClick = sign)
+            }
+        }
         a.open -> {
-            Text("Check in for ${a.currentSessionLabel} when you arrive.", fontSize = 15.sp, color = Theme.ink)
-            PrimaryButton("Check In Now", Icons.Filled.PanTool, busy = checkingIn, modifier = Modifier.testTag("checkIn"), onClick = checkIn)
+            Text("Sign for ${a.currentSessionLabel} with your finger when you arrive.", fontSize = 15.sp, color = Theme.ink)
+            PrimaryButton("Check In Now", Icons.Filled.Draw, modifier = Modifier.testTag("checkIn"), onClick = sign)
         }
         else -> Text(
             if (d.bucket == "upcoming") "Check-in opens on the first day of class." else "Check-in is closed for this class.",

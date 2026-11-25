@@ -61,6 +61,7 @@ import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Schedule
@@ -131,6 +132,7 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     var saving by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var qr by remember { mutableStateOf<QrLink?>(null) }
+    var signing by remember { mutableStateOf(false) }
     // Announcements: the composer, the post being deleted, and the latest list from a post or delete.
     var draft by rememberSaveable(runId) { mutableStateOf("") }
     var posting by remember { mutableStateOf(false) }
@@ -199,12 +201,7 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                                 onSession = { session = it; resetMarks(d, it) },
                                 onToggle = { email, on -> present = if (on) present + email else present - email; dirty = true },
                                 onMarkAll = { present = d.roster.map { it.email }.toSet(); dirty = true },
-                                onQr = {
-                                    qr = QrLink(
-                                        "Check-in QR", d.checkinUrl, d.currentSessionLabel,
-                                        "Learners scan this with their phone camera to check in to this session.", "Share Check-in Link", "checkinQr",
-                                    )
-                                },
+                                onSign = { signing = true },
                                 onSave = {
                                     scope.launch {
                                         saving = true
@@ -372,6 +369,17 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
         )
     }
     val d = detail
+    if (signing && d != null) {
+        val key = session
+        val signers = listOf(Signer("trainer", "You (trainer)", key in d.trainerSigned)) +
+            d.roster.map { Signer(it.email, it.name.ifEmpty { it.email }, key in it.signed) }
+        SignatureSheet(
+            title = d.title, sessionLabel = d.sessions.firstOrNull { it.key == key }?.label.orEmpty(), signers = signers,
+            hint = "Choose who is signing, then sign with a finger in the box.", closeOnSuccess = false,
+            submit = { signer, png -> vm.signAttendance(runId, key, signer.id, png) },
+            onDismiss = { signing = false; scope.launch { load() } },
+        )
+    }
     qr?.let { link ->
         if (link.url.isNotEmpty()) QrSheet(
             heading = link.heading, link = link.url, title = d?.title.orEmpty(), sessionLabel = link.caption,
@@ -440,7 +448,7 @@ private fun TakeAttendanceContent(
     onSession: (String) -> Unit,
     onToggle: (String, Boolean) -> Unit,
     onMarkAll: () -> Unit,
-    onQr: () -> Unit,
+    onSign: () -> Unit,
     onSave: () -> Unit,
 ) {
     val open = d.attendanceOpen
@@ -505,7 +513,12 @@ private fun TakeAttendanceContent(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(r.name.ifEmpty { r.email }, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Theme.ink)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(r.name.ifEmpty { r.email }, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Theme.ink)
+                        if (session in r.signed) {
+                            Icon(Icons.Filled.Draw, contentDescription = "Signed", tint = Theme.success, modifier = Modifier.size(16.dp))
+                        }
+                    }
                     Text(
                         r.email + if (r.walkin) " · walk-in" else "", fontSize = 12.sp, color = Theme.secondaryText,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -532,9 +545,21 @@ private fun TakeAttendanceContent(
                     modifier = Modifier.testTag("saveAttendance"), onClick = onSave,
                 )
             }
-            if (d.checkinUrl.isNotEmpty()) {
+            if (session.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                TonalButton("Show Check-in QR", Icons.Filled.QrCode2, modifier = Modifier.testTag("showQR"), onClick = onQr)
+                if (session in d.trainerSigned) {
+                    IconLine(
+                        Icons.Filled.Draw, "You have signed for this session.",
+                        color = Theme.success, iconTint = Theme.success, fontSize = 13, weight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                TonalButton("Sign Attendance", Icons.Filled.Draw, modifier = Modifier.testTag("signAttendance"), onClick = onSign)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "You sign for the session, or hand your phone to a learner to sign. A learner who signs is marked present.",
+                    fontSize = 12.sp, color = Theme.secondaryText,
+                )
             }
         }
     }

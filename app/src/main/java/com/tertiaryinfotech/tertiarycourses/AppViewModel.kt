@@ -713,9 +713,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return api.postAsync("trainer/attendance", body).str("message").ifEmpty { "Attendance saved." }
     }
 
-    suspend fun markAttendance(runId: Int): String =
-        api.postAsync("learner/attendance", JSONObject().put("run_id", runId)).str("message")
+    /** Learner: check in to the current session with a finger signature ([signature] = base64 PNG). */
+    suspend fun markAttendance(runId: Int, signature: String): String =
+        api.postAsync("learner/attendance", JSONObject().put("run_id", runId).put("signature", signature)).str("message")
             .ifEmpty { "You have been marked present." }
+
+    /** Trainer: a finger signature on this phone; [signer] = "trainer" or a roster learner's email. */
+    suspend fun signAttendance(runId: Int, sessionKey: String, signer: String, signature: String): String =
+        api.postAsync(
+            "trainer/sign",
+            JSONObject().put("run_id", runId).put("session_key", sessionKey).put("signer", signer).put("signature", signature),
+        ).str("message").ifEmpty { "Signature saved." }
 
     suspend fun survey(runId: Int): Survey =
         Survey.from(api.getAsync("learner/survey", mapOf("run_id" to "$runId")).getJSONObject("survey"))
