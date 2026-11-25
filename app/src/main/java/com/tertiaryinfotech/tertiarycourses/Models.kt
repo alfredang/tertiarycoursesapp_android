@@ -724,8 +724,14 @@ data class AdminClassesReply(
     }
 }
 
-/** A non-WSQ course in the developer home (`staff/courses`). [nextClass] is "" when none is scheduled. */
-data class StaffCourse(val id: Int, val sku: String, val title: String, val enabled: Boolean, val upcomingClasses: Int, val nextClass: String) {
+/**
+ * A non-WSQ course in the developer home (`staff/courses`). [nextClass] is "" when none is scheduled.
+ * [courseType] and the hours arrive from 1.8 of the API (blank / null from an older site).
+ */
+data class StaffCourse(
+    val id: Int, val sku: String, val title: String, val enabled: Boolean, val upcomingClasses: Int, val nextClass: String,
+    val courseType: String = "", val trainingHours: Double? = null, val assessmentHours: Double? = null,
+) {
     fun matches(query: String): Boolean {
         val q = query.trim()
         return q.isEmpty() || title.contains(q, ignoreCase = true) || sku.contains(q, ignoreCase = true)
@@ -734,34 +740,62 @@ data class StaffCourse(val id: Int, val sku: String, val title: String, val enab
     companion object {
         fun from(j: JSONObject) = StaffCourse(
             j.int("id"), j.str("sku"), j.str("title"), j.optBool("enabled") ?: true, j.int("upcoming_classes"), j.str("next_class"),
+            j.str("course_type"), j.numOrNull("training_hours"), j.numOrNull("assessment_hours"),
         )
     }
 }
 
-data class DevTopic(val title: String, val subTopics: List<String>)
-data class DevClass(val classId: String, val startDate: String, val endDate: String, val startTime: String, val endTime: String, val vacancy: String, val mode: String)
-
-/** A course as the admin edit page shows it (`staff/course`), read only. */
+/**
+ * A course for the Developer page (`staff/course`): identity, funding validity, type and hours,
+ * the courseware links and the Practice Exam switch. The 1.8 fields are blank / null / empty
+ * from an older site, which then falls back to [durationHours].
+ */
 data class DevCourseDetail(
-    val id: Int, val sku: String, val title: String, val enabled: Boolean, val price: Double?, val currency: String,
-    val durationHours: String, val sessions: String, val level: String, val software: String, val programmingLanguage: String,
-    val shortDescription: String, val topics: List<DevTopic>, val prerequisite: String, val additionalNote: String,
-    val trainerProfile: String, val metaTitle: String, val metaDescription: String, val metaKeywords: String,
-    val url: String, val classes: List<DevClass>,
+    val id: Int, val sku: String, val title: String, val enabled: Boolean,
+    val durationHours: String,
+    val courseType: String = "",
+    val fundingValidityStart: String = "",
+    val fundingValidityEnd: String = "",
+    val trainingHours: Double? = null,
+    val assessmentHours: Double? = null,
+    val durationDays: Int? = null,
+    val courseware: List<DevCoursewareLink> = emptyList(),
+    val practiceExam: PracticeExamSetting? = null,
 ) {
     companion object {
         fun from(j: JSONObject) = DevCourseDetail(
-            j.int("id"), j.str("sku"), j.str("title"), j.optBool("enabled") ?: true, j.numOrNull("price"), j.str("currency"),
-            j.str("duration_hours"), j.str("sessions"), j.str("level"), j.str("software"), j.str("programming_language"),
-            j.str("short_description"),
-            (j.optJSONArray("topics")?.objects() ?: emptyList()).map { DevTopic(it.str("title"), it.strings("sub_topics")) },
-            j.str("prerequisite"), j.str("additional_note"), j.str("trainer_profile"), j.str("meta_title"),
-            j.str("meta_description"), j.str("meta_keywords"), j.str("url"),
-            (j.optJSONArray("upcoming_classes")?.objects() ?: emptyList()).map {
-                DevClass(it.str("class_id"), it.str("start_date"), it.str("end_date"), it.str("start_time"), it.str("end_time"), it.str("vacancy"), it.str("mode"))
-            },
+            j.int("id"), j.str("sku"), j.str("title"), j.optBool("enabled") ?: true, j.str("duration_hours"),
+            j.str("course_type"), j.str("funding_validity_start"), j.str("funding_validity_end"),
+            j.numOrNull("training_hours"), j.numOrNull("assessment_hours"), j.numOrNull("duration_days")?.toInt(),
+            j.list("courseware") { DevCoursewareLink(it.str("key"), it.str("label"), it.str("url")) }.filter { it.url.isNotBlank() },
+            j.obj("practice_exam_setting")?.let(PracticeExamSetting::from),
         )
     }
+}
+
+/** One saved courseware link of a course (Trainer Slides, Learner Guide, the Drive folder, …). */
+data class DevCoursewareLink(val key: String, val label: String, val url: String)
+
+/** A course's Practice Exam switch, as the web Edit Course -> Course Settings holds it. [examSlug] "" = off. */
+data class PracticeExamSetting(
+    val configured: Boolean, val enabled: Boolean, val examSlug: String, val examCode: String,
+    val exams: List<Exam>, val warning: String,
+) {
+    data class Exam(val slug: String, val code: String, val title: String)
+
+    companion object {
+        fun from(j: JSONObject) = PracticeExamSetting(
+            j.bool("configured"), j.bool("enabled"), j.str("exam_slug"), j.str("exam_code"),
+            j.list("exams") { Exam(it.str("slug"), it.str("code"), it.str("title")) }.filter { it.slug.isNotEmpty() },
+            j.str("warning"),
+        )
+    }
+}
+
+/** "7.5 h", "16 h", "0 h". */
+fun devHours(hours: Double?): String {
+    val h = hours ?: 0.0
+    return (if (h == Math.rint(h)) h.toLong().toString() else "%.1f".format(Locale.ENGLISH, h)) + " h"
 }
 
 data class DeveloperCoursesReply(val today: String, val total: Int, val withClasses: Int, val disabled: Int, val courses: List<StaffCourse>) {

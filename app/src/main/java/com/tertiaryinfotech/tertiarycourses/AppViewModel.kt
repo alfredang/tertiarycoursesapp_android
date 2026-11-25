@@ -484,6 +484,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun loadDeveloperCourse(id: Int): DevCourseDetail =
         DevCourseDetail.from(api.getAsync("staff/course", mapOf("role" to "developer", "id" to id.toString())).obj("course") ?: throw ApiException("Course not found.", 404))
 
+    /** Turns a course's practice exam on (linked to [examSlug]) or off (""). The server checks the role. */
+    suspend fun setPracticeExam(courseId: Int, examSlug: String): PracticeExamSetting {
+        val body = JSONObject().put("role", activeRole).put("id", courseId).put("exam_slug", examSlug)
+        return api.postAsync("staff/practiceexam", body).obj("setting")?.let(PracticeExamSetting::from)
+            ?: throw ApiException("The practice exam could not be saved.", 500)
+    }
+
     suspend fun loadDeveloperCourses() {
         developerCourses = DeveloperCoursesReply.from(api.getAsync("staff/courses", mapOf("role" to "developer")))
     }

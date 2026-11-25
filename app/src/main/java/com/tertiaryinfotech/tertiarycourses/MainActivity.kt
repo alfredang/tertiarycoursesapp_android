@@ -232,7 +232,7 @@ private fun RouteScreen(vm: AppViewModel, route: Route, push: (Route) -> Unit, p
         is Route.TrainerClass -> TrainerClassScreen(vm, route.runId, route.title, push, pop)
         is Route.Document -> DocumentScreen(route.title, route.url, pop)
         is Route.CourseDetail -> CourseDetailScreen(route.course, pop)
-        is Route.DevCourse -> DeveloperCourseScreen(vm, route.id, route.sku, pop)
+        is Route.DevCourse -> DeveloperCourseScreen(vm, route.id, route.sku, push, pop)
         Route.Catalog -> CatalogScreen(vm, push = push, onBack = pop)
         Route.Feedback -> FeedbackScreen(onBack = pop)
         Route.About -> AboutScreen(onBack = pop)

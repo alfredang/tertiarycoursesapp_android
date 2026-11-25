@@ -139,7 +139,8 @@ def main():
         sys.exit(f"AAB versionCode {bundle['versionCode']} != build.gradle {vc}")
     print(f"bundle uploaded: versionCode {vc}")
 
-    notes = listing.get("releaseNotes") or release_notes()
+    # Always the top CHANGELOG.md entry: a hand-kept listing field went stale (1.8 shipped 1.7 notes).
+    notes = release_notes()
     svc.edits().tracks().update(packageName=pkg, editId=eid, track=a.track, body={
         "track": a.track,
         "releases": [{"name": f"{version_name()} ({vc})", "versionCodes": [str(vc)], "status": a.release_status,

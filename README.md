@@ -25,6 +25,8 @@ features and the deep-blue (`#0B3D8E`) house design in light and dark.
   cached copy or the bundled snapshot.
 
 **Signed in** — bottom navigation by role (switch with *View as* when the account holds several): Learner: My Classes · Calendar · Certificates · Support · Account (Billing is in Account). Trainer: My Classes · Calendar · Payout · Hours · Account. Admin: Home · Calendar · Courses · Account. Developer, Marketing, Franchise Admin: Home · Courses · Account
+- **Developer course page** — course title and code, funding validity, course type, duration, training and
+  assessment hours, every courseware link (tap to open, hold to copy) and the Practice Exam switch (saved on the website).
 - **My Classes** — Current / Upcoming / Past, reloaded when the app returns to the foreground. A
   trainer sees the classes they teach and attend together, tagged **Teaching** / **Attending**.
 - **Class detail (learner)** — **Check In Now** (digital attendance), class materials, **Quizzes**

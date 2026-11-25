@@ -3,6 +3,11 @@
 All notable changes to the TC LMS SG Android app (formerly Tertiary Courses SG).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8] — 2026-11-25 · versionCode 8
+
+- Developer: the course page shows course title and code, funding validity, course type, duration, training and assessment hours, every courseware link (tap to open, hold to copy) and a Practice Exam switch.
+- Developer: course cards show the course type and hours instead of class information.
+
 ## [1.7] — 2026-11-24 · versionCode 7
 
 - Class page in the website's layout: E-Attendance, Announcements, Virtual Class Link, Courseware, Lesson, Course Survey and Certificate.
