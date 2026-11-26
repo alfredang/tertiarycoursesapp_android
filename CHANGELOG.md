@@ -3,6 +3,12 @@
 All notable changes to the TC LMS SG Android app (formerly Tertiary Courses SG).
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9] — 2026-11-26 · versionCode 9
+
+- E-Attendance: Check In Now opens a signature box. Sign with your finger to check in to the session. If your trainer marked you present first, you can still add your signature.
+- Trainers: Sign Attendance replaces the check-in QR code. Sign for the session yourself, or hand your phone to a learner to sign; a learner who signs is marked present. The roster shows who has signed.
+- The signatures appear on the website's E-Attendance page and in its signed attendance sheet (PDF).
+
 ## [1.8] — 2026-11-25 · versionCode 8
 
 - Developer: the course page shows course title and code, funding validity, course type, duration, training and assessment hours, every courseware link (tap to open, hold to copy) and a Practice Exam switch.

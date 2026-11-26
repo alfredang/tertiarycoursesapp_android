@@ -20,8 +20,8 @@ android {
         applicationId = "com.tertiaryinfotech.tertiarycoursesapp"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.8"
+        versionCode = 9
+        versionName = "1.9"
         // URL scheme the site returns to after admin sign-in with Google:
         // "tclms" + the lower-case Site.code (SG tclmssg, MY tclmsmy, GH tclmsgh).
         manifestPlaceholders["authScheme"] = "tclmssg"
