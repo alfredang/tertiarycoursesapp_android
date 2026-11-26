@@ -713,6 +713,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         return api.postAsync("trainer/attendance", body).str("message").ifEmpty { "Attendance saved." }
     }
 
+    /** Trainer: the class's saved attendance as an Excel file; [session] = a session key or "all". */
+    suspend fun attendanceWorkbook(context: android.content.Context, runId: Int, session: String): java.io.File =
+        api.download(context, "trainer/export", mapOf("run_id" to "$runId", "session" to session), "Attendance_${runId}_$session.xlsx")
+
     /** Learner: check in to the current session with a finger signature ([signature] = base64 PNG). */
     suspend fun markAttendance(runId: Int, signature: String): String =
         api.postAsync("learner/attendance", JSONObject().put("run_id", runId).put("signature", signature)).str("message")

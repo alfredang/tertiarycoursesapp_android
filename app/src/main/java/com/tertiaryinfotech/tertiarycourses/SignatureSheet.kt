@@ -187,56 +187,7 @@ fun SignatureSheet(
                 }
                 Text(hint, fontSize = 13.sp, color = Theme.secondaryText)
 
-                // The pad is always white with black ink, in either theme, like paper.
-                Box(
-                    Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)).background(Color.White)
-                        .border(1.dp, Color.Black.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
-                        .onSizeChanged { padSize = it }
-                        .semantics { contentDescription = "Signature pad. Draw your signature with one finger." }
-                        .testTag("signaturePad")
-                        .pointerInput(Unit) {
-                            awaitEachGesture {
-                                val down = awaitFirstDown()
-                                down.consume()
-                                strokes = strokes + listOf(listOf(down.position))
-                                while (true) {
-                                    val event = awaitPointerEvent()
-                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                    if (!change.pressed) break
-                                    change.consume()
-                                    val p = Offset(
-                                        change.position.x.coerceIn(0f, size.width.toFloat()),
-                                        change.position.y.coerceIn(0f, size.height.toFloat()),
-                                    )
-                                    strokes = strokes.dropLast(1) + listOf(strokes.last() + p)
-                                }
-                            }
-                        },
-                ) {
-                    Box(
-                        Modifier.align(Alignment.BottomStart).padding(start = 24.dp, end = 24.dp, bottom = 44.dp)
-                            .fillMaxWidth().height(1.dp).background(Color.Black.copy(alpha = 0.25f)),
-                    )
-                    if (strokes.isEmpty()) {
-                        Text(
-                            "Sign here", fontSize = 15.sp, color = Color.Black.copy(alpha = 0.35f),
-                            modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 52.dp),
-                        )
-                    }
-                    Canvas(Modifier.fillMaxSize()) {
-                        strokes.forEach { stroke ->
-                            if (stroke.size == 1) {
-                                drawCircle(Color.Black, radius = inkWidth / 2, center = stroke[0])
-                            } else {
-                                val path = Path().apply {
-                                    moveTo(stroke[0].x, stroke[0].y)
-                                    stroke.drop(1).forEach { lineTo(it.x, it.y) }
-                                }
-                                drawPath(path, Color.Black, style = Stroke(width = inkWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                            }
-                        }
-                    }
-                }
+                SignaturePad(strokes, onStrokes = { strokes = it }, onSize = { padSize = it }, inkWidth = inkWidth)
 
                 message?.let {
                     IconLine(Icons.Filled.CheckCircle, it, color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold)
@@ -259,6 +210,153 @@ fun SignatureSheet(
                 Spacer(Modifier.width(1.dp))
             }
         }
+    }
+}
+
+/** The box a signature is drawn in with one finger: white like paper in either theme, black ink. */
+@Composable
+fun SignaturePad(
+    strokes: List<List<Offset>>,
+    onStrokes: (List<List<Offset>>) -> Unit,
+    onSize: (IntSize) -> Unit,
+    inkWidth: Float,
+    modifier: Modifier = Modifier,
+) {
+    // The gesture handler outlives recompositions, so it reads the latest strokes through this.
+    var latest by remember { mutableStateOf(strokes) }
+    latest = strokes
+    fun update(new: List<List<Offset>>) { latest = new; onStrokes(new) }
+    Box(
+        modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(14.dp)).background(Color.White)
+            .border(1.dp, Color.Black.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
+            .onSizeChanged(onSize)
+            .semantics { contentDescription = "Signature pad. Draw your signature with one finger." }
+            .testTag("signaturePad")
+            // Consumes from touch-down, so a stroke draws instead of scrolling the page.
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    down.consume()
+                    update(latest + listOf(listOf(down.position)))
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        change.consume()
+                        val p = Offset(
+                            change.position.x.coerceIn(0f, size.width.toFloat()),
+                            change.position.y.coerceIn(0f, size.height.toFloat()),
+                        )
+                        update(latest.dropLast(1) + listOf(latest.last() + p))
+                    }
+                }
+            },
+    ) {
+        Box(
+            Modifier.align(Alignment.BottomStart).padding(start = 24.dp, end = 24.dp, bottom = 44.dp)
+                .fillMaxWidth().height(1.dp).background(Color.Black.copy(alpha = 0.25f)),
+        )
+        if (strokes.isEmpty()) {
+            Text(
+                "Sign here", fontSize = 15.sp, color = Color.Black.copy(alpha = 0.35f),
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 52.dp),
+            )
+        }
+        Canvas(Modifier.fillMaxSize()) {
+            strokes.forEach { stroke ->
+                if (stroke.size == 1) {
+                    drawCircle(Color.Black, radius = inkWidth / 2, center = stroke[0])
+                } else {
+                    val path = Path().apply {
+                        moveTo(stroke[0].x, stroke[0].y)
+                        stroke.drop(1).forEach { lineTo(it.x, it.y) }
+                    }
+                    drawPath(path, Color.Black, style = Stroke(width = inkWidth, cap = StrokeCap.Round, join = StrokeJoin.Round))
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The check-in form, shown in E-Attendance for learners and trainers alike: the signed-in
+ * person's details filled in from their profile, the session, a signature box and Check In.
+ * It is the same form the web portal's check-in QR opens; the apps never show that QR.
+ * [submit] gets the signature as a base64 PNG and answers the message; [onDone] gets that message.
+ */
+@Composable
+fun CheckInForm(
+    name: String,
+    email: String,
+    phone: String,
+    sessionLabel: String,
+    buttonTitle: String = "Check In",
+    submit: suspend (String) -> String,
+    onDone: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    var strokes by remember { mutableStateOf(listOf<List<Offset>>()) }
+    var padSize by remember { mutableStateOf(IntSize.Zero) }
+    var sending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val hasInk = strokes.sumOf { it.size } >= 8
+    val inkWidth = with(LocalDensity.current) { 3.dp.toPx() }
+
+    @Composable
+    fun field(label: String, value: String) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.secondaryText)
+            Text(
+                value.ifEmpty { "—" }, fontSize = 15.sp, color = Theme.ink,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Theme.page)
+                    .border(1.dp, Theme.cardBorder, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            )
+        }
+    }
+
+    Column(Modifier.fillMaxWidth().testTag("checkInForm"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        field("Name", name)
+        field("Email", email)
+        if (phone.isNotEmpty()) field("Mobile", phone)
+        field("Session", sessionLabel)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Signature", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Theme.secondaryText)
+            SignaturePad(strokes, onStrokes = { strokes = it }, onSize = { padSize = it }, inkWidth = inkWidth)
+        }
+        error?.let { Text(it, fontSize = 13.sp, color = Theme.danger) }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.weight(1f)) {
+                TonalButton(
+                    "Clear", Icons.Outlined.CleaningServices, enabled = strokes.isNotEmpty() && !sending,
+                    modifier = Modifier.testTag("clearSignature"),
+                ) { strokes = emptyList() }
+            }
+            Box(Modifier.weight(1f)) {
+                PrimaryButton(
+                    buttonTitle, Icons.Filled.CheckCircle, enabled = hasInk, busy = sending,
+                    modifier = Modifier.testTag("checkIn"),
+                ) {
+                    if (padSize.width <= 0 || padSize.height <= 0) return@PrimaryButton
+                    val png = signaturePng(strokes, padSize, inkWidth)
+                    scope.launch {
+                        sending = true; error = null
+                        try {
+                            val text = submit(png)
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            strokes = emptyList()
+                            onDone(text)
+                        } catch (e: Exception) {
+                            error = e.message ?: "The signature could not be sent. Please try again."
+                        } finally {
+                            sending = false
+                        }
+                    }
+                }
+            }
+        }
+        if (!hasInk) Text("Sign with your finger in the box, then tap $buttonTitle.", fontSize = 12.sp, color = Theme.secondaryText)
     }
 }
 

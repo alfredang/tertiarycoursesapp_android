@@ -1,6 +1,7 @@
 package com.tertiaryinfotech.tertiarycourses
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.material.icons.filled.Campaign
@@ -59,6 +60,9 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Draw
@@ -133,6 +137,8 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     var notice by remember { mutableStateOf<String?>(null) }
     var qr by remember { mutableStateOf<QrLink?>(null) }
     var signing by remember { mutableStateOf(false) }
+    // "all" or a session key while its Excel file downloads.
+    var exporting by remember { mutableStateOf<String?>(null) }
     // Announcements: the composer, the post being deleted, and the latest list from a post or delete.
     var draft by rememberSaveable(runId) { mutableStateOf("") }
     var posting by remember { mutableStateOf(false) }
@@ -202,6 +208,23 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
                                 onToggle = { email, on -> present = if (on) present + email else present - email; dirty = true },
                                 onMarkAll = { present = d.roster.map { it.email }.toSet(); dirty = true },
                                 onSign = { signing = true },
+                                me = vm.learner,
+                                checkIn = { png -> vm.signAttendance(runId, session, "trainer", png) },
+                                onCheckedIn = { notice = it; scope.launch { load() } },
+                                exporting = exporting,
+                                onExport = { which ->
+                                    scope.launch {
+                                        exporting = which
+                                        try {
+                                            val file = vm.attendanceWorkbook(context, runId, which)
+                                            shareFile(context, file, "Attendance ${d.classId}")
+                                        } catch (e: Exception) {
+                                            notice = e.message
+                                        } finally {
+                                            exporting = null
+                                        }
+                                    }
+                                },
                                 onSave = {
                                     scope.launch {
                                         saving = true
@@ -371,11 +394,11 @@ fun TrainerClassScreen(vm: AppViewModel, runId: Int, title: String, push: (Route
     val d = detail
     if (signing && d != null) {
         val key = session
-        val signers = listOf(Signer("trainer", "You (trainer)", key in d.trainerSigned)) +
-            d.roster.map { Signer(it.email, it.name.ifEmpty { it.email }, key in it.signed) }
+        // A learner signing on the trainer's phone; the trainer checks in with the form instead.
+        val signers = d.roster.map { Signer(it.email, it.name.ifEmpty { it.email }, key in it.signed) }
         SignatureSheet(
             title = d.title, sessionLabel = d.sessions.firstOrNull { it.key == key }?.label.orEmpty(), signers = signers,
-            hint = "Choose who is signing, then sign with a finger in the box.", closeOnSuccess = false,
+            hint = "Choose the learner, then they sign with a finger in the box.", closeOnSuccess = false,
             submit = { signer, png -> vm.signAttendance(runId, key, signer.id, png) },
             onDismiss = { signing = false; scope.launch { load() } },
         )
@@ -449,6 +472,11 @@ private fun TakeAttendanceContent(
     onToggle: (String, Boolean) -> Unit,
     onMarkAll: () -> Unit,
     onSign: () -> Unit,
+    me: Learner?,
+    checkIn: suspend (String) -> String,
+    onCheckedIn: (String) -> Unit,
+    exporting: String?,
+    onExport: (String) -> Unit,
     onSave: () -> Unit,
 ) {
     val open = d.attendanceOpen
@@ -501,7 +529,31 @@ private fun TakeAttendanceContent(
             )
         }
 
+        // The trainer checks in with the same form as a learner: details from the profile, a
+        // signature box and Check In. No QR code in the apps (it is on the web portal only).
+        if (open && session.isNotEmpty()) {
+            val sessionLabel = d.sessions.firstOrNull { it.key == session }?.label.orEmpty()
+            Spacer(Modifier.height(12.dp))
+            if (session in d.trainerSigned) {
+                IconLine(
+                    Icons.Filled.CheckCircle, "You're checked in for $sessionLabel.",
+                    color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
+                )
+            } else {
+                key(session) {
+                    CheckInForm(
+                        name = me?.fullName?.ifBlank { me.email }.orEmpty(), email = me?.email.orEmpty(), phone = me?.phone.orEmpty(),
+                        sessionLabel = sessionLabel, submit = checkIn, onDone = onCheckedIn,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = Theme.cardBorder)
+        }
+
         Spacer(Modifier.height(12.dp))
+        SectionLabel("Learners")
+        Spacer(Modifier.height(4.dp))
         if (d.roster.isEmpty()) {
             Text("No learners are on this class roster yet.", fontSize = 15.sp, color = Theme.secondaryText)
         }
@@ -545,22 +597,45 @@ private fun TakeAttendanceContent(
                     modifier = Modifier.testTag("saveAttendance"), onClick = onSave,
                 )
             }
-            if (session.isNotEmpty()) {
+            if (session.isNotEmpty() && d.roster.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                if (session in d.trainerSigned) {
-                    IconLine(
-                        Icons.Filled.Draw, "You have signed for this session.",
-                        color = Theme.success, iconTint = Theme.success, fontSize = 13, weight = FontWeight.SemiBold,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-                TonalButton("Sign Attendance", Icons.Filled.Draw, modifier = Modifier.testTag("signAttendance"), onClick = onSign)
+                TonalButton("Let a Learner Sign on This Phone", Icons.Filled.Draw, modifier = Modifier.testTag("signAttendance"), onClick = onSign)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "You sign for the session, or hand your phone to a learner to sign. A learner who signs is marked present.",
+                    "A learner without a phone can check in on yours: they sign, and are marked present.",
                     fontSize = 12.sp, color = Theme.secondaryText,
                 )
             }
+        }
+
+        if (d.roster.isNotEmpty() && d.sessions.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = Theme.cardBorder)
+            Spacer(Modifier.height(12.dp))
+            Text("Download attendance", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf(Triple("This Session", session, "downloadSession"), Triple("All Sessions", "all", "downloadAllSessions")).forEach { (label, which, tag) ->
+                    OutlinedButton(
+                        onClick = { onExport(which) }, enabled = exporting == null && which.isNotEmpty(),
+                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag(tag),
+                    ) {
+                        if (exporting == which) {
+                            CircularProgressIndicator(color = Theme.accent, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                        } else {
+                            Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(18.dp), tint = Theme.accent)
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        Text(label, fontSize = 14.sp, color = Theme.accent, maxLines = 1)
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (dirty) "Save your changes first: the file has the saved attendance."
+                else "The saved attendance as an Excel file, to save to Drive, email or share.",
+                fontSize = 12.sp, color = Theme.secondaryText,
+            )
         }
     }
 }

@@ -1,6 +1,7 @@
 package com.tertiaryinfotech.tertiarycourses
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -367,7 +368,6 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
     val scope = rememberCoroutineScope()
     var detail by remember { mutableStateOf<ClassDetail?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var signing by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     val open = rememberOpenSections(runId)
 
@@ -404,7 +404,11 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
                             "E-Attendance", Icons.Filled.CheckCircle, "E-Attendance" in open.value, { open.toggle("E-Attendance") },
                             trailing = if (a.sessionsTotal > 0) "${a.sessionsPresent}/${a.sessionsTotal}" else null,
                         ) {
-                            AttendanceContent(d) { signing = true }
+                            AttendanceContent(
+                                d, vm.learner,
+                                submit = { png -> vm.markAttendance(runId, png) },
+                                onDone = { notice = it; scope.launch { load() } },
+                            )
                         }
                         FoldCard(
                             "Announcements", Icons.Filled.Campaign, "Announcements" in open.value, { open.toggle("Announcements") },
@@ -465,16 +469,6 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
         }
     }
 
-    val signFor = detail
-    if (signing && signFor != null) {
-        val me = vm.learner
-        SignatureSheet(
-            title = signFor.title, sessionLabel = signFor.attendance.currentSessionLabel,
-            signers = listOf(Signer("me", me?.fullName?.ifBlank { me.email } ?: "Your signature")),
-            submit = { _, png -> vm.markAttendance(runId, png).also { notice = it } },
-            onDismiss = { signing = false; scope.launch { load() } },
-        )
-    }
     notice?.let { msg ->
         AlertDialog(
             onDismissRequest = { notice = null },
@@ -485,24 +479,31 @@ fun ClassDetailScreen(vm: AppViewModel, runId: Int, title: String, push: (Route)
     }
 }
 
-/** Check in, the sessions with a tick for each one attended, and "Attended x of y". */
+/**
+ * The check-in form (filled in from the profile: sign, then Check In; no QR code in the app),
+ * the sessions with a tick for each one attended, and "Attended x of y".
+ */
 @Composable
-private fun AttendanceContent(d: ClassDetail, sign: () -> Unit) {
+private fun AttendanceContent(d: ClassDetail, me: Learner?, submit: suspend (String) -> String, onDone: (String) -> Unit) {
     val a = d.attendance
     when {
-        a.markedPresent -> {
-            IconLine(
-                Icons.Filled.CheckCircle, "You're checked in for ${a.currentSessionLabel}.",
-                color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
-            )
-            // Marked present by the trainer but not signed yet: the learner can still sign.
-            if (a.open && a.signed == false) {
-                TonalButton("Add Your Signature", Icons.Filled.Draw, modifier = Modifier.testTag("addSignature"), onClick = sign)
-            }
-        }
+        // Signed already (or an older server that does not report signatures): checked in.
+        a.markedPresent && a.signed != false -> IconLine(
+            Icons.Filled.CheckCircle, "You're checked in for ${a.currentSessionLabel}.",
+            color = Theme.success, iconTint = Theme.success, fontSize = 15, weight = FontWeight.SemiBold,
+        )
         a.open -> {
-            Text("Sign for ${a.currentSessionLabel} with your finger when you arrive.", fontSize = 15.sp, color = Theme.ink)
-            PrimaryButton("Check In Now", Icons.Filled.Draw, modifier = Modifier.testTag("checkIn"), onClick = sign)
+            if (a.markedPresent) {
+                Text("Your trainer marked you present. Add your signature for ${a.currentSessionLabel}.", fontSize = 15.sp, color = Theme.ink)
+            }
+            key(a.currentSession) {
+                CheckInForm(
+                    name = me?.fullName?.ifBlank { me.email }.orEmpty(), email = me?.email.orEmpty(), phone = me?.phone.orEmpty(),
+                    sessionLabel = a.currentSessionLabel,
+                    buttonTitle = if (a.markedPresent) "Submit Signature" else "Check In",
+                    submit = submit, onDone = onDone,
+                )
+            }
         }
         else -> Text(
             if (d.bucket == "upcoming") "Check-in opens on the first day of class." else "Check-in is closed for this class.",

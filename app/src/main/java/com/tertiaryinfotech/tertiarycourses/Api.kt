@@ -15,9 +15,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.Inet4Address
 import java.net.InetAddress
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class ApiException(message: String, val status: Int = 0) : Exception(message)
@@ -53,6 +55,38 @@ class Api(private val tokens: TokenStore, private val onSessionExpired: () -> Un
             throw ApiException("Can't reach ${Site.siteName}. Check your connection and try again.")
         }
     }
+
+    /**
+     * An authenticated GET that answers a file (the attendance workbook), saved in the cache
+     * under the server's filename so it can be shared or saved. Errors are the JSON envelope.
+     */
+    suspend fun download(context: Context, path: String, query: Map<String, String>, fallbackName: String): File =
+        withContext(Dispatchers.IO) {
+            val url = (Site.apiUrl + path).toHttpUrl().newBuilder().apply {
+                query.forEach { (k, v) -> addQueryParameter(k, v) }
+            }.build()
+            val token = tokens.token
+            val request = Request.Builder().url(url).header("User-Agent", userAgent)
+                .apply { if (token != null) header("Authorization", "Bearer $token") }
+                .build()
+            val (status, disposition, bytes) = try {
+                client.newCall(request).execute().use { Triple(it.code, it.header("Content-Disposition").orEmpty(), it.body?.bytes() ?: ByteArray(0)) }
+            } catch (e: IOException) {
+                throw ApiException("The download did not finish. Check your connection and try again.")
+            }
+            if (status !in 200..299) {
+                if (status == 401 && token != null) onSessionExpired()
+                val msg = try { JSONObject(String(bytes)).optString("error") } catch (e: Exception) { "" }
+                throw ApiException(msg.ifEmpty { "Something went wrong ($status). Please try again." }, status)
+            }
+            var name = Regex("""filename\s*=\s*"?([^";]+)"?""").find(disposition)?.groupValues?.get(1).orEmpty()
+                .replace(Regex("""[/\\:*?"<>|\p{Cntrl}]"""), "-").trim().take(120)
+            if (name.isEmpty() || '.' !in name) name = fallbackName
+            val root = File(context.cacheDir, "downloads")
+            val file = File(File(root, UUID.randomUUID().toString()).apply { mkdirs() }, name)
+            file.writeBytes(bytes)
+            file
+        }
 
     private fun send(path: String, method: String, query: Map<String, String>, body: JSONObject?): JSONObject {
         val url = (Site.apiUrl + path).toHttpUrl().newBuilder().apply {

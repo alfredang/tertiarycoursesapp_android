@@ -301,7 +301,7 @@ private object DocumentDownload {
 }
 
 /** The system share sheet for a downloaded file: save to Files or Drive, print, send to another app. */
-private fun shareFile(context: Context, file: File, title: String) {
+internal fun shareFile(context: Context, file: File, title: String) {
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     val type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
     val send = Intent(Intent.ACTION_SEND).setType(type)
